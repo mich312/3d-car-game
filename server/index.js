@@ -20,7 +20,16 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, '..', 'dist');
-const PORT = Number(process.env.PORT) || 80;
+
+// Port precedence: --port CLI flag (works the same in cmd/PowerShell/bash),
+// then the PORT env var, then 80.
+function resolvePort() {
+  const argIdx = process.argv.indexOf('--port');
+  if (argIdx !== -1 && process.argv[argIdx + 1]) return Number(process.argv[argIdx + 1]);
+  if (process.env.PORT) return Number(process.env.PORT);
+  return 80;
+}
+const PORT = resolvePort();
 
 // ---------------------------------------------------------------------------
 // Static file serving (only used when a production build exists)
@@ -345,6 +354,24 @@ setInterval(() => {
   }
   broadcast({ t: 'state', players: states });
 }, 50);
+
+// The ws library re-emits http server errors on the WebSocketServer, so the
+// handler must be attached to both — whichever fires first wins.
+const onBindError = (err) => {
+  if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+    console.error(
+      `\nCould not bind port ${PORT} (${err.code}).\n` +
+        (PORT === 80
+          ? 'Port 80 is often taken by IIS/HTTP.sys on Windows, or needs root on Linux/macOS.\n'
+          : '') +
+        'Pick another port with:  node server/index.js --port 3001\n'
+    );
+    process.exit(1);
+  }
+  throw err;
+};
+server.on('error', onBindError);
+wss.on('error', onBindError);
 
 server.listen(PORT, () => {
   console.log(`Nitro Rumble server listening on http://localhost:${PORT} (ws path: /ws)`);

@@ -14,9 +14,10 @@ PORT=3001 node server/index.js &   # serves dist AND the websocket on :3001
 curl -s http://localhost:3001/health   # {"ok":true,"players":N}
 ```
 
-Dev mode alternative: `npm run dev` (server :80 by default + vite :5173, ws
-proxied; set PORT to move both). The server defaults to :80 — the examples
-here pin PORT=3001 to avoid needing root.
+Dev mode alternative: `npm run dev` (server :5174 + vite :5173, ws proxied).
+The server defaults to :80 for `npm start`; `--port N` or the PORT env var
+override it (the examples here pin 3001 to avoid needing root), and a bind
+failure exits with a friendly message instead of a stack trace.
 
 ## Surfaces to drive
 

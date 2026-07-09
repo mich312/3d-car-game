@@ -39,7 +39,7 @@ driver to 15 coins wins the round.
 
 ```bash
 npm install
-npm run dev        # starts the game server (:80) + vite dev server (:5173)
+npm run dev        # starts the game server (:5174) + vite dev server (:5173)
 ```
 
 Open http://localhost:5173 — in as many tabs/machines as you like.
@@ -49,7 +49,14 @@ Open http://localhost:5173 — in as many tabs/machines as you like.
 ```bash
 npm run build
 npm start          # serves the built client AND the websocket server on :80
-                   # (override with PORT=xxxx; binding :80 may require root)
+```
+
+Port 80 needs root on Linux/macOS and is often taken by IIS/HTTP.sys on
+Windows. Override it with the cross-platform `--port` flag (or the `PORT`
+env var):
+
+```bash
+node server/index.js --port 3001
 ```
 
 ## Architecture
