@@ -13,6 +13,7 @@ const lerpAngle = (a, b, t) => {
 };
 
 function RemoteCar({ info }) {
+  const infected = useStore((s) => s.mode === 'tag' && s.infected.includes(info.id));
   const group = useRef();
   const speedRef = useRef(0);
   const steerRef = useRef(0);
@@ -47,6 +48,7 @@ function RemoteCar({ info }) {
         steerRef={steerRef}
         boostRef={boostRef}
         driftRef={driftRef}
+        infected={infected}
       />
     </group>
   );

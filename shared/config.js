@@ -30,6 +30,54 @@ export const BOOST_PADS = [
   { x: 0, z: -26, angle: Math.PI },
 ];
 
+// --- Game modes -----------------------------------------------------------
+// The server rotates through MODE_ORDER; each round is one mode. `time` is
+// the round cap in seconds — when it expires the mode's timeout rule picks
+// the winner.
+
+export const MODES = {
+  coins: {
+    name: 'COIN RUSH',
+    desc: 'Grab coins — first to 15 wins. Ram rivals to steal!',
+    winScore: 15,
+    time: 180,
+  },
+  tag: {
+    name: 'INFECTION',
+    desc: 'The infected spread by touch. Last clean car wins!',
+    time: 120,
+  },
+  crown: {
+    name: 'CROWN KEEPER',
+    desc: 'Hold the crown to score points. Bump the holder to snatch it!',
+    winScore: 25,
+    time: 120,
+  },
+  race: {
+    name: 'GRAND PRIX',
+    desc: 'Drive through the gates in order — 2 laps. First home wins!',
+    laps: 2,
+    time: 180,
+  },
+};
+
+export const MODE_ORDER = ['coins', 'tag', 'crown', 'race'];
+
+// Race gates form a loop around the arena, clear of the pillars.
+export const RACE_GATES = [
+  { x: 0, z: 76 },
+  { x: 65, z: 40 },
+  { x: 76, z: -10 },
+  { x: 35, z: -70 },
+  { x: -40, z: -72 },
+  { x: -76, z: -5 },
+  { x: -68, z: 55 },
+];
+export const GATE_RADIUS = 9;
+
+export const CROWN_SPAWN = { x: 0, z: -30 };
+export const TAG_RADIUS = 4.2; // touch distance for infection / crown snatch
+
 export const CAR_COLORS = [
   '#ff4757',
   '#1e90ff',

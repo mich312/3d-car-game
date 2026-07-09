@@ -22,7 +22,8 @@ export default function Lobby() {
           NITRO<span>RUMBLE</span>
         </h1>
         <p className="tagline">
-          Grab coins. Hit boost pads. Ram rivals to steal their loot. First to 15 wins the round.
+          Four rotating games: Coin Rush, Infection, Crown Keeper, Grand Prix. Drift, boost, and
+          ram your way to the top — solo against bots or with friends.
         </p>
 
         <label className="field-label">Driver name</label>

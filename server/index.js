@@ -1,8 +1,13 @@
 // Nitro Rumble game server.
 // - Relays player state over websockets at 20Hz
-// - Authoritative for coins, scores, coin-steals and round wins
-// - Runs simple AI bot cars so the arena is never empty
+// - Rotates through game modes (coin rush / infection tag / crown keeper /
+//   gate race) and is authoritative for all scoring and round wins
+// - Runs simple AI bot cars that play every mode
 // - In production also serves the built client from ../dist
+//
+// Flags: --port N        listen port (default: PORT env or 80)
+//        --mode NAME     start rotation at this mode (testing)
+//        --round-time N  override every mode's round cap, seconds (testing)
 
 import http from 'http';
 import fs from 'fs';
@@ -11,25 +16,28 @@ import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import {
   ARENA_HALF,
-  WIN_SCORE,
   COIN_COUNT,
   COIN_RADIUS,
   OBSTACLES,
   CAR_COLORS,
+  MODES,
+  MODE_ORDER,
+  RACE_GATES,
+  GATE_RADIUS,
+  CROWN_SPAWN,
+  TAG_RADIUS,
 } from '../shared/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, '..', 'dist');
 
-// Port precedence: --port CLI flag (works the same in cmd/PowerShell/bash),
-// then the PORT env var, then 80.
-function resolvePort() {
-  const argIdx = process.argv.indexOf('--port');
-  if (argIdx !== -1 && process.argv[argIdx + 1]) return Number(process.argv[argIdx + 1]);
-  if (process.env.PORT) return Number(process.env.PORT);
-  return 80;
+function argValue(flag) {
+  const i = process.argv.indexOf(flag);
+  return i !== -1 ? process.argv[i + 1] : undefined;
 }
-const PORT = resolvePort();
+const PORT = Number(argValue('--port')) || Number(process.env.PORT) || 80;
+const ROUND_TIME_OVERRIDE = Number(argValue('--round-time')) || null;
+const START_MODE = MODE_ORDER.includes(argValue('--mode')) ? argValue('--mode') : MODE_ORDER[0];
 
 // ---------------------------------------------------------------------------
 // Static file serving (only used when a production build exists)
@@ -49,7 +57,7 @@ const MIME = {
 const server = http.createServer((req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, players: players.size }));
+    res.end(JSON.stringify({ ok: true, players: players.size, mode }));
     return;
   }
   const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
@@ -80,22 +88,35 @@ const server = http.createServer((req, res) => {
 const players = new Map(); // id -> player
 let nextId = 1;
 let coinId = 1;
+
+let mode = START_MODE;
 let roundOver = false;
+let roundEndsAt = 0;
+let roundStartedAt = 0;
+
+let coins = [];
+const infected = new Set(); // tag: player ids
+let crown = { holder: null, x: CROWN_SPAWN.x, z: CROWN_SPAWN.z }; // crown: holder or ground pos
+let crownAcc = 0; // fractional crown points
+const contactCooldown = new Map(); // "a:b" -> timestamp (crown snatches, coin bumps)
 
 const rand = (min, max) => min + Math.random() * (max - min);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const dist2 = (ax, az, bx, bz) => (ax - bx) ** 2 + (az - bz) ** 2;
+
+const roundTime = (m) => (ROUND_TIME_OVERRIDE || MODES[m].time) * 1000;
 
 function randomCoinPos() {
   for (let i = 0; i < 60; i++) {
     const x = rand(-ARENA_HALF + 10, ARENA_HALF - 10);
     const z = rand(-ARENA_HALF + 10, ARENA_HALF - 10);
-    const clear = OBSTACLES.every((o) => (x - o.x) ** 2 + (z - o.z) ** 2 > (o.r + 4) ** 2);
+    const clear = OBSTACLES.every((o) => dist2(x, z, o.x, o.z) > (o.r + 4) ** 2);
     if (clear) return { x, z };
   }
   return { x: 0, z: 35 };
 }
 
 const makeCoin = () => ({ id: 'c' + coinId++, ...randomCoinPos() });
-let coins = Array.from({ length: COIN_COUNT }, makeCoin);
 
 function broadcast(msg, exceptId = null) {
   const s = JSON.stringify(msg);
@@ -114,41 +135,95 @@ const publicPlayer = (p) => ({
   score: p.score,
 });
 
+// Dynamic per-mode state shipped in init/reset so late joiners sync up.
+const modeData = () => ({
+  infected: [...infected],
+  crown,
+});
+
 // ---------------------------------------------------------------------------
-// Rules: coins, steals, rounds
+// Round lifecycle
+// ---------------------------------------------------------------------------
+
+function startRound(nextMode) {
+  mode = nextMode;
+  roundOver = false;
+  roundStartedAt = Date.now();
+  roundEndsAt = roundStartedAt + roundTime(mode);
+  crownAcc = 0;
+  infected.clear();
+  contactCooldown.clear();
+  crown = { holder: null, x: CROWN_SPAWN.x, z: CROWN_SPAWN.z };
+  for (const p of players.values()) p.score = 0;
+  coins = mode === 'coins' ? Array.from({ length: COIN_COUNT }, makeCoin) : [];
+  if (mode === 'tag') {
+    const all = [...players.values()];
+    if (all.length > 0) infected.add(all[Math.floor(Math.random() * all.length)].id);
+  }
+  broadcast({
+    t: 'reset',
+    mode,
+    coins,
+    players: [...players.values()].map(publicPlayer),
+    data: modeData(),
+  });
+}
+
+function endRound(winner) {
+  if (roundOver) return;
+  roundOver = true;
+  broadcast({ t: 'win', id: winner ? winner.id : null, name: winner ? winner.name : 'Nobody' });
+  setTimeout(() => {
+    const idx = MODE_ORDER.indexOf(mode);
+    startRound(MODE_ORDER[(idx + 1) % MODE_ORDER.length]);
+  }, 5000);
+}
+
+function topScorer() {
+  let best = null;
+  for (const p of players.values()) if (!best || p.score > best.score) best = p;
+  return best && best.score > 0 ? best : best;
+}
+
+function checkTimeout() {
+  if (Date.now() < roundEndsAt) return;
+  if (mode === 'tag') {
+    const survivors = [...players.values()].filter((p) => !infected.has(p.id));
+    endRound(survivors[Math.floor(Math.random() * survivors.length)] || null);
+  } else {
+    endRound(topScorer());
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mode rules
 // ---------------------------------------------------------------------------
 
 function checkCoins(pl) {
-  if (roundOver) return;
+  if (mode !== 'coins' || roundOver) return;
   for (let i = 0; i < coins.length; i++) {
     const c = coins[i];
-    const dx = pl.p[0] - c.x;
-    const dz = pl.p[2] - c.z;
-    if (dx * dx + dz * dz < COIN_RADIUS * COIN_RADIUS) {
+    if (dist2(pl.p[0], pl.p[2], c.x, c.z) < COIN_RADIUS * COIN_RADIUS) {
       const fresh = makeCoin();
       coins[i] = fresh;
       pl.score++;
       broadcast({ t: 'coin', id: c.id, by: pl.id, coin: fresh, score: pl.score });
-      if (pl.score >= WIN_SCORE) endRound(pl);
+      if (pl.score >= MODES.coins.winScore) endRound(pl);
       return;
     }
   }
 }
 
-const bumpCooldown = new Map(); // "attacker:victim" -> timestamp
-
 function handleBump(pl, targetId) {
-  if (roundOver) return;
+  if (mode !== 'coins' || roundOver) return;
   const target = players.get(targetId);
   if (!target || target.id === pl.id) return;
-  const dx = pl.p[0] - target.p[0];
-  const dz = pl.p[2] - target.p[2];
-  if (dx * dx + dz * dz > 8 * 8) return; // must actually be near the victim
+  if (dist2(pl.p[0], pl.p[2], target.p[0], target.p[2]) > 8 * 8) return;
   if (Math.abs(pl.speed) < Math.abs(target.speed) + 4) return; // rammer must be clearly faster
   const key = pl.id + ':' + target.id;
   const now = Date.now();
-  if ((bumpCooldown.get(key) || 0) > now) return;
-  bumpCooldown.set(key, now + 2000);
+  if ((contactCooldown.get(key) || 0) > now) return;
+  contactCooldown.set(key, now + 2000);
   if (target.score > 0) {
     target.score--;
     pl.score++;
@@ -158,23 +233,95 @@ function handleBump(pl, targetId) {
       to: pl.id,
       scores: { [target.id]: target.score, [pl.id]: pl.score },
     });
-    if (pl.score >= WIN_SCORE) endRound(pl);
+    if (pl.score >= MODES.coins.winScore) endRound(pl);
   }
 }
 
-function endRound(winner) {
-  roundOver = true;
-  broadcast({ t: 'win', id: winner.id, name: winner.name });
-  setTimeout(() => {
-    for (const p of players.values()) p.score = 0;
-    coins = Array.from({ length: COIN_COUNT }, makeCoin);
-    roundOver = false;
-    broadcast({ t: 'reset', coins, players: [...players.values()].map(publicPlayer) });
-  }, 5000);
+function tickTag() {
+  if (Date.now() < roundStartedAt + 3000) return; // grace period after the reveal
+  const all = [...players.values()];
+  for (const z of all) {
+    if (!infected.has(z.id)) continue;
+    for (const s of all) {
+      if (infected.has(s.id)) continue;
+      if (dist2(z.p[0], z.p[2], s.p[0], s.p[2]) < TAG_RADIUS * TAG_RADIUS) {
+        infected.add(s.id);
+        broadcast({ t: 'tagged', id: s.id, by: z.id });
+      }
+    }
+  }
+  const survivors = all.filter((p) => !infected.has(p.id));
+  if (all.length >= 2 && survivors.length === 1) endRound(survivors[0]);
+}
+
+function tickCrown(dt) {
+  const holder = crown.holder ? players.get(crown.holder) : null;
+  if (!holder) {
+    crown.holder = null;
+    for (const p of players.values()) {
+      if (dist2(p.p[0], p.p[2], crown.x, crown.z) < 3.5 * 3.5) {
+        crown.holder = p.id;
+        broadcast({ t: 'crown', holder: p.id });
+        break;
+      }
+    }
+    return;
+  }
+  // score while holding: 1 point per second
+  crownAcc += dt;
+  if (crownAcc >= 1) {
+    crownAcc -= 1;
+    holder.score++;
+    broadcast({ t: 'scores', scores: { [holder.id]: holder.score } });
+    if (holder.score >= MODES.crown.winScore) {
+      endRound(holder);
+      return;
+    }
+  }
+  // anyone touching the holder snatches the crown
+  const now = Date.now();
+  for (const p of players.values()) {
+    if (p.id === holder.id) continue;
+    if (dist2(p.p[0], p.p[2], holder.p[0], holder.p[2]) < TAG_RADIUS * TAG_RADIUS) {
+      const key = 'crown:' + p.id;
+      if ((contactCooldown.get(key) || 0) > now) continue;
+      contactCooldown.set(key, now + 2500);
+      crown.holder = p.id;
+      crownAcc = 0;
+      broadcast({ t: 'crown', holder: p.id });
+      break;
+    }
+  }
+}
+
+function dropCrown(pl) {
+  if (mode === 'crown' && crown.holder === pl.id) {
+    crown = {
+      holder: null,
+      x: clamp(pl.p[0], -ARENA_HALF + 10, ARENA_HALF - 10),
+      z: clamp(pl.p[2], -ARENA_HALF + 10, ARENA_HALF - 10),
+    };
+    broadcast({ t: 'crown', holder: null, x: crown.x, z: crown.z });
+  }
+}
+
+function tickRace() {
+  const goal = RACE_GATES.length * MODES.race.laps;
+  for (const p of players.values()) {
+    const gate = RACE_GATES[p.score % RACE_GATES.length];
+    if (dist2(p.p[0], p.p[2], gate.x, gate.z) < GATE_RADIUS * GATE_RADIUS) {
+      p.score++;
+      broadcast({ t: 'gate', id: p.id, n: p.score });
+      if (p.score >= goal) {
+        endRound(p);
+        return;
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Bots — keep the arena lively when few humans are around
+// Bots — they play every mode
 // ---------------------------------------------------------------------------
 
 const BOT_ROSTER = [
@@ -189,7 +336,6 @@ const normalizeAngle = (a) => {
   while (a < -Math.PI) a += Math.PI * 2;
   return a;
 };
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 function manageBots() {
   const all = [...players.values()];
@@ -208,7 +354,7 @@ function manageBots() {
       speed: 0,
       boost: false,
       score: 0,
-      target: null,
+      targetCoin: null,
       topSpeed: rand(17, 22),
       ws: null,
     };
@@ -218,39 +364,90 @@ function manageBots() {
   }
   while (bots.length > want) {
     const bot = bots.pop();
+    dropCrown(bot);
     players.delete(bot.id);
+    infected.delete(bot.id);
     broadcast({ t: 'leave', id: bot.id });
   }
+}
+
+// Where does this bot want to go right now, given the mode?
+function botTarget(b) {
+  const nearest = (filter) => {
+    let best = null;
+    let bestD = Infinity;
+    for (const p of players.values()) {
+      if (p.id === b.id || !filter(p)) continue;
+      const d = dist2(b.p[0], b.p[2], p.p[0], p.p[2]);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  };
+  const fleeFrom = (x, z) => {
+    const dx = b.p[0] - x;
+    const dz = b.p[2] - z;
+    const d = Math.hypot(dx, dz) || 1;
+    return {
+      x: clamp(b.p[0] + (dx / d) * 40, -ARENA_HALF + 8, ARENA_HALF - 8),
+      z: clamp(b.p[2] + (dz / d) * 40, -ARENA_HALF + 8, ARENA_HALF - 8),
+    };
+  };
+
+  if (mode === 'tag') {
+    if (infected.has(b.id)) {
+      const prey = nearest((p) => !infected.has(p.id));
+      return prey ? { x: prey.p[0], z: prey.p[2] } : null;
+    }
+    const threat = nearest((p) => infected.has(p.id));
+    return threat ? fleeFrom(threat.p[0], threat.p[2]) : null;
+  }
+  if (mode === 'crown') {
+    if (crown.holder === b.id) {
+      const chaser = nearest(() => true);
+      return chaser ? fleeFrom(chaser.p[0], chaser.p[2]) : null;
+    }
+    if (crown.holder) {
+      const h = players.get(crown.holder);
+      return h ? { x: h.p[0], z: h.p[2] } : null;
+    }
+    return { x: crown.x, z: crown.z };
+  }
+  if (mode === 'race') {
+    return RACE_GATES[b.score % RACE_GATES.length];
+  }
+  // coins
+  if (!b.targetCoin || !coins.some((c) => c.id === b.targetCoin.id)) {
+    let best = null;
+    let bestD = Infinity;
+    for (const c of coins) {
+      const d = dist2(b.p[0], b.p[2], c.x, c.z);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    b.targetCoin = best;
+  }
+  return b.targetCoin;
 }
 
 function updateBots(dt) {
   for (const b of players.values()) {
     if (!b.bot) continue;
-    // Chase the nearest coin (re-pick when it disappears)
-    if (!b.target || !coins.some((c) => c.id === b.target.id)) {
-      let best = null;
-      let bestD = Infinity;
-      for (const c of coins) {
-        const d = (c.x - b.p[0]) ** 2 + (c.z - b.p[2]) ** 2;
-        if (d < bestD) {
-          bestD = d;
-          best = c;
-        }
-      }
-      b.target = best;
-    }
-    if (!b.target) continue;
+    const target = botTarget(b);
+    if (!target) continue;
 
-    const desired = Math.atan2(b.target.x - b.p[0], b.target.z - b.p[2]);
+    const desired = Math.atan2(target.x - b.p[0], target.z - b.p[2]);
     const turn = normalizeAngle(desired - b.yaw);
     b.yaw += clamp(turn, -1, 1) * 2.4 * dt;
-    // Slow down for sharp turns, speed up on straights
     const wantSpeed = Math.abs(turn) > 1.2 ? b.topSpeed * 0.45 : b.topSpeed;
     b.speed += (wantSpeed - b.speed) * clamp(2.2 * dt, 0, 1);
     b.p[0] += Math.sin(b.yaw) * b.speed * dt;
     b.p[2] += Math.cos(b.yaw) * b.speed * dt;
 
-    // Push out of pillars and nudge the heading so they don't grind on them
     for (const o of OBSTACLES) {
       const dx = b.p[0] - o.x;
       const dz = b.p[2] - o.z;
@@ -302,9 +499,10 @@ wss.on('connection', (ws) => {
         JSON.stringify({
           t: 'init',
           id: me.id,
+          mode,
           players: [...players.values()].map(publicPlayer),
           coins,
-          winScore: WIN_SCORE,
+          data: modeData(),
         })
       );
       broadcast({ t: 'join', player: publicPlayer(me) }, me.id);
@@ -330,16 +528,25 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     if (me) {
+      dropCrown(me);
       players.delete(me.id);
+      infected.delete(me.id);
       broadcast({ t: 'leave', id: me.id });
       manageBots();
     }
   });
 });
 
-// 20Hz world tick: advance bots and broadcast everyone's state (compact arrays)
+// 20Hz world tick: bots, mode rules, state broadcast
+const TICK = 1 / 20;
 setInterval(() => {
-  updateBots(1 / 20);
+  updateBots(TICK);
+  if (players.size > 0 && !roundOver) {
+    if (mode === 'tag') tickTag();
+    else if (mode === 'crown') tickCrown(TICK);
+    else if (mode === 'race') tickRace();
+    checkTimeout();
+  }
   if (players.size === 0) return;
   const states = {};
   for (const p of players.values()) {
@@ -352,8 +559,18 @@ setInterval(() => {
       p.boost ? 1 : 0,
     ];
   }
-  broadcast({ t: 'state', players: states });
+  broadcast({
+    t: 'state',
+    players: states,
+    tl: roundOver ? 0 : Math.max(0, Math.ceil((roundEndsAt - Date.now()) / 1000)),
+  });
 }, 50);
+
+startRound(START_MODE);
+
+// ---------------------------------------------------------------------------
+// Listen
+// ---------------------------------------------------------------------------
 
 // The ws library re-emits http server errors on the WebSocketServer, so the
 // handler must be attached to both — whichever fires first wins.

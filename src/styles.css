@@ -376,15 +376,70 @@ kbd {
 
 .hint {
   position: absolute;
+  bottom: 20px;
+  left: 16px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(169, 182, 224, 0.7);
+  background: rgba(10, 14, 34, 0.5);
+  padding: 6px 12px;
+  border-radius: 20px;
+}
+
+.mode-pill {
+  position: absolute;
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 12px;
-  letter-spacing: 1px;
-  color: rgba(169, 182, 224, 0.75);
-  background: rgba(10, 14, 34, 0.5);
-  padding: 6px 14px;
-  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 18px;
+  background: rgba(10, 14, 34, 0.72);
+  border: 1px solid rgba(63, 215, 255, 0.25);
+  border-radius: 24px;
+  backdrop-filter: blur(6px);
+}
+
+.mode-name {
+  font-size: 14px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 2px;
+  color: #3fd7ff;
+}
+
+.mode-timer {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+}
+
+.mode-banner {
+  position: absolute;
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  animation: pop 0.35s ease-out;
+  pointer-events: none;
+}
+
+.mode-banner-title {
+  font-size: 46px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 4px;
+  color: #3fd7ff;
+  text-shadow: 0 0 34px rgba(63, 215, 255, 0.65), 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+.mode-banner-desc {
+  margin-top: 8px;
+  font-size: 17px;
+  color: #eaf0ff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
 }
 
 /* ---------- 3D nameplates (drei Html) ---------- */

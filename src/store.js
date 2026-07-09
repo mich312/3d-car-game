@@ -1,15 +1,20 @@
 import { create } from 'zustand';
-import { WIN_SCORE } from '../shared/config.js';
+import { MODES } from '../shared/config.js';
 
 let feedId = 1;
+let bannerTimer = null;
 
 export const useStore = create((set, get) => ({
   phase: 'lobby', // 'lobby' | 'playing' | 'disconnected'
   myId: null,
-  winScore: WIN_SCORE,
   players: {}, // id -> { id, name, color, bot } (roster; positions live in net.remoteStates)
-  scores: {}, // id -> coin count
+  scores: {}, // id -> mode-specific score (coins / crown pts / gates passed)
   coins: [], // [{ id, x, z }]
+  mode: 'coins',
+  infected: [], // tag: player ids
+  crown: { holder: null, x: 0, z: 0 },
+  timeLeft: 0,
+  banner: null, // { title, desc } shown at round start
   winner: null, // { id, name } while the round-over banner is up
   feed: [], // [{ id, text, tone }]
   // HUD values pushed from the local car at a throttled rate
@@ -17,6 +22,7 @@ export const useStore = create((set, get) => ({
   hudNitro: 100,
 
   setHud: (hudSpeed, hudNitro) => set({ hudSpeed, hudNitro }),
+  setTimeLeft: (timeLeft) => set({ timeLeft }),
 
   pushFeed: (text, tone = 'info') => {
     const entry = { id: feedId++, text, tone };
@@ -26,14 +32,32 @@ export const useStore = create((set, get) => ({
     }, 5000);
   },
 
-  init: ({ id, players, coins, winScore }) => {
+  showBanner: (mode) => {
+    const m = MODES[mode];
+    if (!m) return;
+    clearTimeout(bannerTimer);
+    set({ banner: { title: m.name, desc: m.desc } });
+    bannerTimer = setTimeout(() => set({ banner: null }), 5500);
+  },
+
+  applyModeState: (mode, data) => {
+    set({
+      mode,
+      infected: data?.infected ?? [],
+      crown: data?.crown ?? { holder: null, x: 0, z: 0 },
+    });
+  },
+
+  init: ({ id, players, coins, mode, data }) => {
     const roster = {};
     const scores = {};
     for (const p of players) {
       roster[p.id] = { id: p.id, name: p.name, color: p.color, bot: p.bot };
       scores[p.id] = p.score;
     }
-    set({ phase: 'playing', myId: id, players: roster, scores, coins, winScore });
+    set({ phase: 'playing', myId: id, players: roster, scores, coins });
+    get().applyModeState(mode, data);
+    get().showBanner(mode);
   },
 
   playerJoined: (p) => {
@@ -52,7 +76,7 @@ export const useStore = create((set, get) => ({
       delete players[id];
       delete scores[id];
       if (name) get().pushFeed(`${name} left`);
-      return { players, scores };
+      return { players, scores, infected: s.infected.filter((i) => i !== id) };
     });
   },
 
@@ -73,12 +97,40 @@ export const useStore = create((set, get) => ({
     set((st) => ({ scores: { ...st.scores, ...scores } }));
   },
 
+  tagged: ({ id }) => {
+    const s = get();
+    const name = s.players[id]?.name || '???';
+    if (id === s.myId) s.pushFeed('You got infected! Spread it!', 'bad');
+    else s.pushFeed(`${name} got infected!`);
+    set((st) => ({ infected: [...st.infected, id] }));
+  },
+
+  crownUpdate: ({ holder, x, z }) => {
+    const s = get();
+    if (holder) {
+      const name = s.players[holder]?.name || '???';
+      if (holder === s.myId) s.pushFeed('You have the crown! Run!', 'good');
+      else s.pushFeed(`${name} took the crown!`);
+      set({ crown: { holder, x: 0, z: 0 } });
+    } else {
+      set({ crown: { holder: null, x: x ?? 0, z: z ?? 0 } });
+    }
+  },
+
+  gatePassed: ({ id, n }) => {
+    set((s) => ({ scores: { ...s.scores, [id]: n } }));
+  },
+
+  mergeScores: (scores) => set((s) => ({ scores: { ...s.scores, ...scores } })),
+
   roundWon: ({ id, name }) => set({ winner: { id, name } }),
 
-  roundReset: ({ coins, players }) => {
+  roundReset: ({ coins, players, mode, data }) => {
     const scores = {};
     for (const p of players) scores[p.id] = p.score;
     set({ coins, scores, winner: null });
+    get().applyModeState(mode, data);
+    get().showBanner(mode);
   },
 
   disconnected: () => set({ phase: 'disconnected' }),

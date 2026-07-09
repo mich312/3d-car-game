@@ -59,6 +59,7 @@ export function connect(name, color) {
         store.playerLeft(msg.id);
         break;
       case 'state': {
+        if (typeof msg.tl === 'number' && msg.tl !== store.timeLeft) store.setTimeLeft(msg.tl);
         const myId = store.myId;
         for (const [id, s] of Object.entries(msg.players)) {
           if (id === myId) continue;
@@ -81,6 +82,18 @@ export function connect(name, color) {
         break;
       case 'steal':
         store.steal(msg);
+        break;
+      case 'tagged':
+        store.tagged(msg);
+        break;
+      case 'crown':
+        store.crownUpdate(msg);
+        break;
+      case 'gate':
+        store.gatePassed(msg);
+        break;
+      case 'scores':
+        store.mergeScores(msg.scores);
         break;
       case 'win':
         store.roundWon(msg);

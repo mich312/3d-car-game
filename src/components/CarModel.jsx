@@ -6,10 +6,11 @@ import * as THREE from 'three';
 // Low-poly arcade car, front facing +Z.
 // Animation inputs are refs so both the local car (physics) and remote cars
 // (network interpolation) can drive wheels/flames without re-rendering React.
-export default function CarModel({ color, name, speedRef, steerRef, boostRef, driftRef }) {
+export default function CarModel({ color, name, speedRef, steerRef, boostRef, driftRef, infected }) {
   const body = useRef();
   const flameL = useRef();
   const flameR = useRef();
+  const sickRing = useRef();
   const wheelSpin = useRef([]);
   const wheelSteer = useRef([]);
 
@@ -32,6 +33,10 @@ export default function CarModel({ color, name, speedRef, steerRef, boostRef, dr
       body.current.rotation.z += (targetRoll - body.current.rotation.z) * Math.min(1, 8 * dt);
       const targetPitch = boosting ? 0.03 : 0;
       body.current.rotation.x += (targetPitch - body.current.rotation.x) * Math.min(1, 6 * dt);
+    }
+    if (sickRing.current) {
+      const pulse = 1 + Math.sin(state.clock.elapsedTime * 6) * 0.12;
+      sickRing.current.scale.setScalar(pulse);
     }
     const flicker = boosting ? 0.9 + Math.sin(state.clock.elapsedTime * 40) * 0.35 : 0;
     for (const f of [flameL.current, flameR.current]) {
@@ -125,9 +130,18 @@ export default function CarModel({ color, name, speedRef, steerRef, boostRef, dr
         </group>
       ))}
 
+      {/* infection aura (tag mode) */}
+      {infected && (
+        <mesh ref={sickRing} rotation-x={-Math.PI / 2} position={[0, 0.15, 0]}>
+          <ringGeometry args={[2.0, 2.7, 24]} />
+          <meshBasicMaterial color="#39ff6a" transparent opacity={0.65} toneMapped={false} />
+        </mesh>
+      )}
+
       {name && (
-        <Html position={[0, 2.7, 0]} center distanceFactor={55} occlude={false} zIndexRange={[10, 0]}>
-          <div className="nameplate" style={{ borderColor: color }}>
+        <Html position={[0, 2.7, 0]} center occlude={false} zIndexRange={[10, 0]}>
+          <div className="nameplate" style={{ borderColor: infected ? '#39ff6a' : color }}>
+            {infected ? '🧟 ' : ''}
             {name}
           </div>
         </Html>

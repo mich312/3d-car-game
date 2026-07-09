@@ -36,6 +36,8 @@ function Coin({ coin, index }) {
 
 export default function Coins() {
   const coins = useStore((s) => s.coins);
+  const mode = useStore((s) => s.mode);
+  if (mode !== 'coins') return null;
   return (
     <>
       {coins.map((c, i) => (

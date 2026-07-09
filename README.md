@@ -8,22 +8,40 @@ driver to 15 coins wins the round.
 
 ![game](https://img.shields.io/badge/three.js-R3F-blue) ![multiplayer](https://img.shields.io/badge/multiplayer-websockets-green)
 
+## Rotating game modes
+
+The server rotates through four games, one per round, announced with a big
+banner and a round timer. Bots play every mode.
+
+| Mode | Rules |
+| --- | --- |
+| 🪙 **Coin Rush** | Grab coins; ram a slower car to steal one. First to 15 wins. |
+| 🧟 **Infection** | One car starts infected and spreads it by touch. Last clean car wins. |
+| 👑 **Crown Keeper** | Hold the crown to earn a point per second; bump the holder to snatch it. First to 25. |
+| 🏁 **Grand Prix** | Drive the glowing gates in order, 2 laps. An arrow over your car points to your next gate. |
+
 ## Features
 
 - **Real multiplayer** — a Node.js websocket server relays player state at 20Hz;
   remote cars are smoothly interpolated. Open two browser tabs to race a friend.
 - **AI bot cars** — up to 3 bots (Turbo Tina, Sir Skidsalot, Rusty) fill the
-  arena when few humans are online, so it's fun even solo.
+  arena when few humans are online. They chase coins, flee the infected (or
+  hunt you once infected), guard the crown, and run the race line.
 - **Arcade drift physics** — custom velocity/grip model: hold <kbd>Space</kbd>
   to break traction and slide around corners.
 - **Nitro boost** — hold <kbd>Shift</kbd> to burn nitro (FOV kick + exhaust
   flames). Nitro regenerates slowly, or instantly refills on the green
   **boost pads**, which also launch you.
-- **Coin steals** — ram a slower car at speed to knock a coin loose. The server
-  is authoritative for coins, steals, and round wins.
-- **Rounds** — first to 15 coins wins; scores reset and coins respawn.
-- **HUD** — live scoreboard, speedometer, nitro gauge, event feed, and a
-  real-time minimap.
+- **Server-authoritative rules** — coins, steals, infections, crown snatches,
+  gate progress, and round wins are all decided server-side.
+- **HUD** — mode banner + round timer, adaptive scoreboard, speedometer,
+  nitro gauge, event feed, and a real-time minimap (gates and the loose crown
+  included).
+
+### Testing flags
+
+`node server/index.js --mode race --round-time 20` starts the rotation at a
+given mode with short rounds — handy for trying every mode quickly.
 
 ## Controls
 

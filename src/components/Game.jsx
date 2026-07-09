@@ -3,6 +3,8 @@ import { Canvas } from '@react-three/fiber';
 import { Sky, Stars } from '@react-three/drei';
 import Arena from './Arena.jsx';
 import Coins from './Coins.jsx';
+import Crown from './Crown.jsx';
+import Gates from './Gates.jsx';
 import PlayerCar from './PlayerCar.jsx';
 import RemoteCars from './RemoteCars.jsx';
 
@@ -43,6 +45,8 @@ export default function Game() {
 
       <Arena />
       <Coins />
+      <Crown />
+      <Gates />
       <PlayerCar />
       <RemoteCars />
     </Canvas>

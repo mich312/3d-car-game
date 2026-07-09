@@ -10,6 +10,7 @@ import {
   BOOST_PADS,
   PAD_RADIUS,
   CAR_RADIUS,
+  RACE_GATES,
 } from '../../shared/config.js';
 
 // Tuning
@@ -71,6 +72,8 @@ export default function PlayerCar() {
 
   const myId = useStore((s) => s.myId);
   const color = useStore((s) => (s.myId ? s.players[s.myId]?.color : '#ff4757')) || '#ff4757';
+  const infected = useStore((s) => s.mode === 'tag' && s.infected.includes(s.myId));
+  const gateArrow = useRef();
 
   // Mutable physics state (never triggers React)
   const pos = useRef(new THREE.Vector3(localState.p[0], 0, localState.p[2]));
@@ -230,6 +233,19 @@ export default function PlayerCar() {
       camera.updateProjectionMatrix();
     }
 
+    // --- race mode: point the overhead arrow at my next gate ---
+    if (gateArrow.current) {
+      const st = useStore.getState();
+      if (st.mode === 'race') {
+        gateArrow.current.visible = true;
+        const gate = RACE_GATES[(st.scores[st.myId] || 0) % RACE_GATES.length];
+        // parent group is rotated by yaw, so aim relative to it
+        gateArrow.current.rotation.y = Math.atan2(gate.x - p.x, gate.z - p.z) - yaw.current;
+      } else {
+        gateArrow.current.visible = false;
+      }
+    }
+
     // --- HUD (throttled to ~8Hz) ---
     hudTimer.current -= dt;
     if (hudTimer.current <= 0) {
@@ -248,7 +264,15 @@ export default function PlayerCar() {
         steerRef={steerRef}
         boostRef={boostRef}
         driftRef={driftRef}
+        infected={infected}
       />
+      {/* next-gate pointer (race mode only) */}
+      <group ref={gateArrow} position={[0, 3.4, 0]} visible={false}>
+        <mesh rotation-x={Math.PI / 2}>
+          <coneGeometry args={[0.5, 1.5, 4]} />
+          <meshStandardMaterial color="#3fd7ff" emissive="#3fd7ff" emissiveIntensity={1.8} toneMapped={false} />
+        </mesh>
+      </group>
     </group>
   );
 }
