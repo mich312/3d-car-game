@@ -4,8 +4,13 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Nitro Rumble — a 3D multiplayer arcade car game built with React Three Fiber",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
+    "predev": "node scripts/preflight.js",
     "dev": "concurrently -k \"node server/index.js --port 5174\" \"vite\"",
+    "prebuild": "node scripts/preflight.js",
     "build": "vite build",
     "start": "node server/index.js",
     "preview": "npm run build && node server/index.js"

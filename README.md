@@ -42,6 +42,11 @@ npm install
 npm run dev        # starts the game server (:5174) + vite dev server (:5173)
 ```
 
+> **"vite not found" / "concurrently not found"?** Dev tools live in
+> devDependencies. Run a plain `npm install` — without `--production` or
+> `--omit=dev`, and without `NODE_ENV=production` set (that makes npm skip
+> devDependencies). `npm install --include=dev` forces them regardless.
+
 Open http://localhost:5173 — in as many tabs/machines as you like.
 
 ### Production
