@@ -39,7 +39,7 @@ driver to 15 coins wins the round.
 
 ```bash
 npm install
-npm run dev        # starts the game server (:3001) + vite dev server (:5173)
+npm run dev        # starts the game server (:80) + vite dev server (:5173)
 ```
 
 Open http://localhost:5173 — in as many tabs/machines as you like.
@@ -48,7 +48,8 @@ Open http://localhost:5173 — in as many tabs/machines as you like.
 
 ```bash
 npm run build
-npm start          # serves the built client AND the websocket server on :3001
+npm start          # serves the built client AND the websocket server on :80
+                   # (override with PORT=xxxx; binding :80 may require root)
 ```
 
 ## Architecture

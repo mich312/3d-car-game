@@ -5,9 +5,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // In dev, the game server runs on 3001; proxy websocket traffic to it
+      // In dev, proxy websocket traffic to the game server
       '/ws': {
-        target: 'ws://localhost:3001',
+        target: `ws://localhost:${process.env.PORT || 80}`,
         ws: true,
       },
     },

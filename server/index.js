@@ -20,7 +20,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, '..', 'dist');
-const PORT = Number(process.env.PORT) || 3001;
+const PORT = Number(process.env.PORT) || 80;
 
 // ---------------------------------------------------------------------------
 // Static file serving (only used when a production build exists)
