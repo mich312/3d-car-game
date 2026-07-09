@@ -442,6 +442,33 @@ kbd {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
 }
 
+/* ---------- portal signs (drei Html) ---------- */
+
+.portal-sign {
+  padding: 6px 16px;
+  text-align: center;
+  white-space: nowrap;
+  background: rgba(10, 14, 34, 0.78);
+  border: 2px solid;
+  border-radius: 14px;
+  backdrop-filter: blur(4px);
+  transform: translateY(-4px);
+}
+
+.portal-title {
+  font-size: 16px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 2px;
+}
+
+.portal-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #a9b6e0;
+}
+
 /* ---------- 3D nameplates (drei Html) ---------- */
 
 .nameplate {

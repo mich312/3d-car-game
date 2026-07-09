@@ -8,10 +8,23 @@ driver to 15 coins wins the round.
 
 ![game](https://img.shields.io/badge/three.js-R3F-blue) ![multiplayer](https://img.shields.io/badge/multiplayer-websockets-green)
 
-## Rotating game modes
+## The open world
 
-The server rotates through four games, one per round, announced with a big
-banner and a round timer. Bots play every mode.
+You spawn in an **infinite procedurally generated world** — rolling grass
+hills, pine forests, rocky peaks with snow caps, lakes, and glowing crystals.
+The terrain streams in chunks around you and is generated from a shared
+seeded noise field, so every player drives the same world. Slopes pull you
+downhill, crests launch you airborne, and water bogs you down.
+
+At the center is a neon **portal plaza**: drive into a ring (or press
+<kbd>1</kbd>–<kbd>4</kbd>) to enter that minigame's arena. Portal signs show
+live player counts. A green exit ring in every arena (or <kbd>0</kbd>) brings
+you back to the world.
+
+## Minigames
+
+Each minigame runs in its own room with its own round loop, and AI bots fill
+the arena whenever you're alone — every game works solo or multiplayer.
 
 | Mode | Rules |
 | --- | --- |
@@ -38,10 +51,16 @@ banner and a round timer. Bots play every mode.
   nitro gauge, event feed, and a real-time minimap (gates and the loose crown
   included).
 
+- **Overengineered on purpose** — multi-room websocket server (hub + one room
+  per minigame, all state room-scoped), deterministic chunk-streamed terrain
+  with seamless analytic normals, instanced decorations, terrain-following
+  shadow sun, and bloom post-processing on everything neon.
+
 ### Testing flags
 
-`node server/index.js --mode race --round-time 20` starts the rotation at a
-given mode with short rounds — handy for trying every mode quickly.
+`node server/index.js --round-time 20` shortens every round — handy for
+testing. Quick-travel keys <kbd>1</kbd>–<kbd>4</kbd> / <kbd>0</kbd> jump
+between rooms without driving to a portal.
 
 ## Controls
 

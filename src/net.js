@@ -30,12 +30,9 @@ export function connect(name, color) {
     const store = useStore.getState();
     switch (msg.t) {
       case 'init': {
-        const mine = msg.players.find((p) => p.id === msg.id);
-        if (mine) {
-          localState.p = [...mine.p];
-          localState.yaw = mine.yaw;
-          localState.spawned = true;
-        }
+        localState.p = [...msg.spawn];
+        localState.yaw = msg.yaw;
+        localState.spawned = true;
         for (const p of msg.players) {
           if (p.id !== msg.id) {
             remoteStates.set(p.id, { p: [...p.p], yaw: p.yaw, speed: 0, boost: false });
@@ -45,6 +42,23 @@ export function connect(name, color) {
         startSending();
         break;
       }
+      case 'room': {
+        // teleported to another room: hard-reset positions and roster
+        remoteStates.clear();
+        localState.p = [...msg.spawn];
+        localState.yaw = msg.yaw;
+        const myId = store.myId;
+        for (const p of msg.players) {
+          if (p.id !== myId) {
+            remoteStates.set(p.id, { p: [...p.p], yaw: p.yaw, speed: 0, boost: false });
+          }
+        }
+        store.applyRoom(msg);
+        break;
+      }
+      case 'lobby':
+        store.setPortalCounts(msg.counts);
+        break;
       case 'join':
         remoteStates.set(msg.player.id, {
           p: [...msg.player.p],
@@ -140,4 +154,13 @@ export function sendBump(targetId) {
   if ((bumpSent.get(targetId) || 0) > now - 1500) return;
   bumpSent.set(targetId, now);
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'bump', target: targetId }));
+}
+
+let portalSent = 0;
+
+export function sendPortal(to) {
+  const now = performance.now();
+  if (now - portalSent < 1200) return;
+  portalSent = now;
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'portal', to }));
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useStore } from '../store.js';
 import { localState, remoteStates } from '../net.js';
-import { ARENA_HALF, OBSTACLES, MODES, RACE_GATES } from '../../shared/config.js';
+import { ARENA_HALF, OBSTACLES, MODES, RACE_GATES, HUB_PORTALS } from '../../shared/config.js';
 
 function Minimap() {
   const canvasRef = useRef(null);
@@ -13,7 +13,17 @@ function Minimap() {
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       const S = canvas.width;
-      const toMap = (x, z) => [((x + ARENA_HALF) / (ARENA_HALF * 2)) * S, ((z + ARENA_HALF) / (ARENA_HALF * 2)) * S];
+      const { coins, players, myId, mode, crown } = useStore.getState();
+      const inHub = mode === 'hub';
+
+      // hub map is centered on the player; arena map covers the whole arena
+      const HUB_RANGE = 170;
+      const toMap = inHub
+        ? (x, z) => [
+            ((x - localState.p[0] + HUB_RANGE) / (HUB_RANGE * 2)) * S,
+            ((z - localState.p[2] + HUB_RANGE) / (HUB_RANGE * 2)) * S,
+          ]
+        : (x, z) => [((x + ARENA_HALF) / (ARENA_HALF * 2)) * S, ((z + ARENA_HALF) / (ARENA_HALF * 2)) * S];
 
       ctx.clearRect(0, 0, S, S);
       ctx.fillStyle = 'rgba(10, 14, 34, 0.75)';
@@ -22,16 +32,24 @@ function Minimap() {
       ctx.lineWidth = 2;
       ctx.strokeRect(1, 1, S - 2, S - 2);
 
-      // pillars
-      ctx.fillStyle = 'rgba(90, 110, 190, 0.6)';
-      for (const o of OBSTACLES) {
-        const [x, y] = toMap(o.x, o.z);
-        ctx.beginPath();
-        ctx.arc(x, y, (o.r / (ARENA_HALF * 2)) * S, 0, Math.PI * 2);
-        ctx.fill();
+      if (inHub) {
+        // portal markers
+        for (const portal of HUB_PORTALS) {
+          const [x, y] = toMap(portal.x, portal.z);
+          if (x < -6 || x > S + 6 || y < -6 || y > S + 6) continue;
+          ctx.fillStyle = portal.color;
+          ctx.fillRect(x - 3.5, y - 3.5, 7, 7);
+        }
+      } else {
+        // pillars
+        ctx.fillStyle = 'rgba(90, 110, 190, 0.6)';
+        for (const o of OBSTACLES) {
+          const [x, y] = toMap(o.x, o.z);
+          ctx.beginPath();
+          ctx.arc(x, y, (o.r / (ARENA_HALF * 2)) * S, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
-
-      const { coins, players, myId, mode, crown } = useStore.getState();
 
       // coins
       ctx.fillStyle = '#ffd23f';
@@ -63,6 +81,7 @@ function Minimap() {
         const info = players[id];
         if (!info) continue;
         const [x, y] = toMap(s.p[0], s.p[2]);
+        if (x < -4 || x > S + 4 || y < -4 || y > S + 4) continue;
         ctx.fillStyle = info.color;
         ctx.beginPath();
         ctx.arc(x, y, 3.5, 0, Math.PI * 2);
@@ -97,6 +116,7 @@ function Minimap() {
 }
 
 const SCOREBOARD_TITLES = {
+  hub: 'IN THE WORLD 🌍',
   coins: `FIRST TO ${MODES.coins.winScore} 🪙`,
   tag: 'SURVIVE THE INFECTED 🧟',
   crown: `FIRST TO ${MODES.crown.winScore} 👑`,
@@ -123,6 +143,7 @@ export default function Hud() {
     .sort((a, b) => (mode === 'tag' ? Number(a.sick) - Number(b.sick) : b.score - a.score));
 
   const scoreCell = (p) => {
+    if (mode === 'hub') return '·';
     if (mode === 'tag') return p.sick ? '🧟' : '🏃';
     if (mode === 'race') {
       const lap = Math.floor(p.score / RACE_GATES.length) + 1;
@@ -136,7 +157,7 @@ export default function Hud() {
       {/* mode + round timer */}
       <div className="mode-pill">
         <span className="mode-name">{MODES[mode]?.name || mode}</span>
-        <span className="mode-timer">{fmtTime(timeLeft)}</span>
+        {mode !== 'hub' && <span className="mode-timer">{fmtTime(timeLeft)}</span>}
       </div>
 
       {/* scoreboard */}
@@ -201,7 +222,11 @@ export default function Hud() {
 
       <Minimap />
 
-      <div className="hint">WASD drive · SHIFT nitro · SPACE drift</div>
+      <div className="hint">
+        {mode === 'hub'
+          ? 'WASD drive · SHIFT nitro · drive into a portal (or press 1-4) to play'
+          : 'WASD drive · SHIFT nitro · SPACE drift · green ring (or 0) returns to the world'}
+      </div>
     </div>
   );
 }

@@ -1,8 +1,44 @@
-import React, { useMemo } from 'react';
-import { Grid } from '@react-three/drei';
-import { ARENA_HALF, WALL_HEIGHT, OBSTACLES, BOOST_PADS, PAD_RADIUS } from '../../shared/config.js';
+import React, { useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { Grid, Html } from '@react-three/drei';
+import {
+  ARENA_HALF,
+  WALL_HEIGHT,
+  OBSTACLES,
+  BOOST_PADS,
+  PAD_RADIUS,
+  ARENA_EXIT,
+  PORTAL_RADIUS,
+} from '../../shared/config.js';
 
 const PILLAR_COLORS = ['#3b4a8f', '#41599e', '#35407f'];
+
+// Green ring that takes you back to the open world.
+function ExitPortal() {
+  const disc = useRef();
+  useFrame((_, dt) => {
+    if (disc.current) disc.current.rotation.z -= dt * 1.6;
+  });
+  return (
+    <group position={[ARENA_EXIT.x, 0, ARENA_EXIT.z]}>
+      <mesh position={[0, 4.6, 0]} castShadow>
+        <torusGeometry args={[PORTAL_RADIUS, 0.55, 12, 36]} />
+        <meshStandardMaterial color="#0affa0" emissive="#0affa0" emissiveIntensity={1.8} toneMapped={false} />
+      </mesh>
+      <mesh ref={disc} position={[0, 4.6, 0]}>
+        <circleGeometry args={[PORTAL_RADIUS - 0.4, 28]} />
+        <meshBasicMaterial color="#0affa0" transparent opacity={0.25} side={2} toneMapped={false} />
+      </mesh>
+      <Html position={[0, 10.2, 0]} center occlude={false} zIndexRange={[10, 0]}>
+        <div className="portal-sign" style={{ borderColor: '#0affa0' }}>
+          <div className="portal-title" style={{ color: '#0affa0' }}>
+            🌍 BACK TO WORLD
+          </div>
+        </div>
+      </Html>
+    </group>
+  );
+}
 
 export default function Arena() {
   const size = ARENA_HALF * 2;
@@ -74,6 +110,8 @@ export default function Arena() {
           </mesh>
         </group>
       ))}
+
+      <ExitPortal />
 
       {/* Boost pads */}
       {BOOST_PADS.map((p, i) => (

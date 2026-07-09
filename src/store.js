@@ -10,7 +10,9 @@ export const useStore = create((set, get) => ({
   players: {}, // id -> { id, name, color, bot } (roster; positions live in net.remoteStates)
   scores: {}, // id -> mode-specific score (coins / crown pts / gates passed)
   coins: [], // [{ id, x, z }]
-  mode: 'coins',
+  mode: 'hub', // 'hub' or a minigame: 'coins' | 'tag' | 'crown' | 'race'
+  roomEpoch: 0, // bumped on each room switch so PlayerCar hard-teleports
+  portalCounts: {}, // game -> number of humans inside (hub portal signs)
   infected: [], // tag: player ids
   crown: { holder: null, x: 0, z: 0 },
   timeLeft: 0,
@@ -48,6 +50,8 @@ export const useStore = create((set, get) => ({
     });
   },
 
+  setPortalCounts: (portalCounts) => set({ portalCounts }),
+
   init: ({ id, players, coins, mode, data }) => {
     const roster = {};
     const scores = {};
@@ -55,9 +59,29 @@ export const useStore = create((set, get) => ({
       roster[p.id] = { id: p.id, name: p.name, color: p.color, bot: p.bot };
       scores[p.id] = p.score;
     }
-    set({ phase: 'playing', myId: id, players: roster, scores, coins });
+    set((s) => ({ phase: 'playing', myId: id, players: roster, scores, coins, roomEpoch: s.roomEpoch + 1 }));
     get().applyModeState(mode, data);
     get().showBanner(mode);
+  },
+
+  applyRoom: ({ mode, players, coins, data }) => {
+    const roster = {};
+    const scores = {};
+    for (const p of players) {
+      roster[p.id] = { id: p.id, name: p.name, color: p.color, bot: p.bot };
+      scores[p.id] = p.score;
+    }
+    set((s) => ({
+      players: roster,
+      scores,
+      coins,
+      winner: null,
+      timeLeft: 0,
+      roomEpoch: s.roomEpoch + 1,
+    }));
+    get().applyModeState(mode, data);
+    get().showBanner(mode);
+    get().pushFeed(mode === 'hub' ? 'Back in the open world' : `Entered ${mode.toUpperCase()} arena`, 'good');
   },
 
   playerJoined: (p) => {

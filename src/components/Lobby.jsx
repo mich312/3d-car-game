@@ -22,8 +22,8 @@ export default function Lobby() {
           NITRO<span>RUMBLE</span>
         </h1>
         <p className="tagline">
-          Four rotating games: Coin Rush, Infection, Crown Keeper, Grand Prix. Drift, boost, and
-          ram your way to the top — solo against bots or with friends.
+          Explore an endless procedurally generated world, then drive into a portal: Coin Rush,
+          Infection, Crown Keeper, or the Grand Prix — solo against bots or with friends.
         </p>
 
         <label className="field-label">Driver name</label>

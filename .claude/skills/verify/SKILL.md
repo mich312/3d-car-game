@@ -42,14 +42,19 @@ failure exits with a friendly message instead of a stack trace.
    that mirrors positions from `state` broadcasts can park next to the
    browser player to make remote-car visuals deterministic.
 
-## Game modes
+## World layout: hub + minigame rooms
 
-The server rotates coins → tag → crown → race (see shared/config.js MODES).
-Test flags: `--mode <name>` starts at that mode, `--round-time <sec>`
-overrides every round cap. A full-rotation ws test: join, then per mode park
-on the objective (coin pos / another player in tag / CROWN_SPAWN / RACE_GATES
-in order) and expect `coin` / `tagged` / `crown`+`scores` / `gate` events,
-a `win` per round, and `reset` carrying the next mode.
+Joining lands you in the 'hub' room (infinite terrain, no rules, no bots).
+Send `{t:'portal', to:'coins'|'tag'|'crown'|'race'|'hub'}` (server
+rate-limits to 1/s) to switch rooms; you get `{t:'room', mode, players,
+coins, data, spawn, yaw}` and then usually a `reset` when a dormant room
+starts its round — ws test clients MUST apply the reset's coins. All state
+is room-scoped; assert isolation by keeping a second client in the hub.
+Hub players get `{t:'lobby', counts}` every 2s. `--round-time <sec>`
+shortens rounds. In the browser, keys 1-4/0 quick-travel between rooms
+(assert via the `.mode-name` pill: FREE ROAM ↔ game names).
+Minigame rules are unchanged (see shared/config.js MODES): park on the
+objective and expect `coin`/`tagged`/`crown`+`scores`/`gate` events.
 
 ## Gotchas
 

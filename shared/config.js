@@ -36,6 +36,11 @@ export const BOOST_PADS = [
 // the winner.
 
 export const MODES = {
+  hub: {
+    name: 'FREE ROAM',
+    desc: 'Explore the endless world — drive into a portal to play a minigame.',
+    time: 0,
+  },
   coins: {
     name: 'COIN RUSH',
     desc: 'Grab coins — first to 15 wins. Ram rivals to steal!',
@@ -61,7 +66,18 @@ export const MODES = {
   },
 };
 
-export const MODE_ORDER = ['coins', 'tag', 'crown', 'race'];
+export const GAMES = ['coins', 'tag', 'crown', 'race'];
+
+// Portal ring around the hub spawn plaza. Drive through one to join that
+// minigame's room; a green exit ring inside each arena brings you back.
+export const HUB_PORTALS = [
+  { game: 'coins', x: 0, z: 44, color: '#ffd23f', icon: '🪙' },
+  { game: 'tag', x: 44, z: 0, color: '#39ff6a', icon: '🧟' },
+  { game: 'crown', x: 0, z: -44, color: '#ff5db1', icon: '👑' },
+  { game: 'race', x: -44, z: 0, color: '#3fd7ff', icon: '🏁' },
+];
+export const PORTAL_RADIUS = 5;
+export const ARENA_EXIT = { x: 0, z: -82 }; // in-arena ring back to the hub
 
 // Race gates form a loop around the arena, clear of the pillars.
 export const RACE_GATES = [
