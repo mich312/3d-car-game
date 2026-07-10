@@ -698,43 +698,9 @@ function Plaza() {
   );
 }
 
-// Directional light that follows the player so shadows exist everywhere in
-// an infinite world.
-function FollowSun() {
-  const light = useRef();
-  const target = useRef(new THREE.Object3D());
-  useFrame(() => {
-    if (!light.current) return;
-    const [x, , z] = localState.p;
-    light.current.position.set(x + 70, 110, z - 60);
-    target.current.position.set(x, 0, z);
-    target.current.updateMatrixWorld();
-    light.current.target = target.current;
-  });
-  return (
-    <>
-      <directionalLight
-        ref={light}
-        castShadow
-        intensity={1.7}
-        color="#ffe2b0"
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-140}
-        shadow-camera-right={140}
-        shadow-camera-top={140}
-        shadow-camera-bottom={-140}
-        shadow-camera-far={400}
-        shadow-bias={-0.0004}
-      />
-      <primitive object={target.current} />
-    </>
-  );
-}
-
 export default function HubWorld() {
   return (
     <group>
-      <FollowSun />
       <TerrainChunks />
       <Water />
       <Plaza />
