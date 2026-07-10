@@ -56,6 +56,24 @@ shortens rounds. In the browser, keys 1-4/0 quick-travel between rooms
 Minigame rules are unchanged (see shared/config.js MODES): park on the
 objective and expect `coin`/`tagged`/`crown`+`scores`/`gate` events.
 
+## Garage / economy
+
+Wallet + owned cars live in localStorage (nr-wallet / nr-owned /
+nr-cartype); seed them via page.evaluate before reload to test purchases.
+Join carries `car`; rosters echo it (assert via a second ws client).
+Car stats: verify at the surface with the Speedster — its no-boost peak
+(server-relayed speed field, index 4 of state arrays) exceeds 30 u/s,
+which the compact can never reach.
+
+## Headless perf gotcha (IMPORTANT for browser probes)
+
+Headless chromium software-renders: big viewports + bloom can drop to
+~5fps. Player physics is sub-stepped so simulation speed stays correct at
+any fps, but HUD polling aliases badly — measure speeds from the 20Hz ws
+state feed, not the HUD. Keep test viewports ≤ ~900x600. Cars accelerate
+for ~3s before hitting caps: sample for 4-5s. Random arena spawns crash
+into pillars/bots — take peak (not final) speed and retry once or twice.
+
 ## Gotchas
 
 - Bots (`id` prefix `b`) fill up to 4 total players and shrink as humans

@@ -62,6 +62,33 @@ the arena whenever you're alone — every game works solo or multiplayer.
 testing. Quick-travel keys <kbd>1</kbd>–<kbd>4</kbd> / <kbd>0</kbd> jump
 between rooms without driving to a portal.
 
+## Garage — earn coins, unlock cars
+
+Everything you do pays out 🪙 into a persistent wallet (saved in your
+browser): +1 per coin grabbed or stolen, +3 per infection you spread, +1 per
+second holding the crown, +2 per race gate, **+25 for winning a round**, and
++2 for touching a glowing crystal out in the world (which also refills your
+nitro).
+
+Spend it in the lobby garage — five rides with different stats and bodies,
+visible to every other player:
+
+| Car | 🪙 | Character |
+| --- | --- | --- |
+| Compact | free | balanced starter |
+| Muscle | 150 | brutal acceleration, hood scoop |
+| Speedster | 300 | +20% top speed, slippery grip |
+| Monster | 550 | giant wheels, +35% grip, eats mountains |
+| Formula X | 900 | best everything, rear wing |
+
+## Playing together
+
+Everyone who opens the same server URL shares one world: you meet in the hub,
+see each other's cars and nameplates, and joining the same portal puts you in
+the same match. Run `npm start` and share `http://<your-host>` (LAN or a
+deployed box) — one Node process serves the whole game. Solo players always
+get bot opponents.
+
 ## Controls
 
 | Key | Action |

@@ -137,6 +137,7 @@ export default function Hud() {
   const feed = useStore((s) => s.feed);
   const hudSpeed = useStore((s) => s.hudSpeed);
   const hudNitro = useStore((s) => s.hudNitro);
+  const wallet = useStore((s) => s.wallet);
 
   const ranked = Object.values(players)
     .map((p) => ({ ...p, score: scores[p.id] || 0, sick: infected.includes(p.id) }))
@@ -159,6 +160,9 @@ export default function Hud() {
         <span className="mode-name">{MODES[mode]?.name || mode}</span>
         {mode !== 'hub' && <span className="mode-timer">{fmtTime(timeLeft)}</span>}
       </div>
+
+      {/* wallet */}
+      <div className="wallet-pill">🪙 {wallet}</div>
 
       {/* scoreboard */}
       <div className="scoreboard">

@@ -15,8 +15,17 @@ import {
   PORTAL_RADIUS,
   ARENA_EXIT,
   GAMES,
+  CAR_TYPES,
+  DEFAULT_CAR,
 } from '../../shared/config.js';
-import { terrainHeight, terrainGradient, terrainNormal, WATER_LEVEL } from '../../shared/terrain.js';
+import {
+  terrainHeight,
+  terrainGradient,
+  terrainNormal,
+  decorationsForChunk,
+  CHUNK_SIZE,
+  WATER_LEVEL,
+} from '../../shared/terrain.js';
 
 // Tuning
 const ENGINE = 46; // forward acceleration
@@ -35,6 +44,34 @@ const SLOPE_PULL = 11; // downhill acceleration on terrain
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const UP = new THREE.Vector3(0, 1, 0);
+
+// Crystals in the hub double as charging stations: touching one refills
+// nitro and pays a couple of coins (per-crystal cooldown).
+const crystalCache = new Map(); // "cx,cz" -> crystal list
+const crystalCooldown = new Map(); // "cx,cz,i" -> timestamp
+function chargeCrystals(px, pz, onCharge) {
+  const cx = Math.floor(px / CHUNK_SIZE);
+  const cz = Math.floor(pz / CHUNK_SIZE);
+  const key = cx + ',' + cz;
+  let crystals = crystalCache.get(key);
+  if (!crystals) {
+    crystals = decorationsForChunk(cx, cz).crystals;
+    crystalCache.set(key, crystals);
+    if (crystalCache.size > 200) crystalCache.clear(); // crude LRU
+  }
+  const now = performance.now();
+  for (let i = 0; i < crystals.length; i++) {
+    const c = crystals[i];
+    const dx = px - c.x;
+    const dz = pz - c.z;
+    if (dx * dx + dz * dz < 3.2 * 3.2) {
+      const ck = key + ',' + i;
+      if ((crystalCooldown.get(ck) || 0) > now) continue;
+      crystalCooldown.set(ck, now + 60000);
+      onCharge();
+    }
+  }
+}
 
 function useKeys() {
   const keys = useRef({ up: false, down: false, left: false, right: false, boost: false, drift: false });
@@ -84,6 +121,8 @@ export default function PlayerCar() {
   const myId = useStore((s) => s.myId);
   const color = useStore((s) => (s.myId ? s.players[s.myId]?.color : '#ff4757')) || '#ff4757';
   const infected = useStore((s) => s.mode === 'tag' && s.infected.includes(s.myId));
+  const carType = useStore((s) => s.carType);
+  const stats = (CAR_TYPES[carType] || CAR_TYPES[DEFAULT_CAR]).stats;
   const gateArrow = useRef();
 
   // Mutable physics state (never triggers React)
@@ -115,12 +154,13 @@ export default function PlayerCar() {
   const qGoal = useRef(new THREE.Quaternion());
 
   useFrame((state, rawDt) => {
-    const dt = Math.min(rawDt, 1 / 20); // avoid physics explosions on tab-switch
     const st = useStore.getState();
     const inHub = st.mode === 'hub';
     const k = keys.current;
     const p = pos.current;
     const v = vel.current;
+    let fSpeed = 0;
+    let boosting = false;
 
     // hard teleport after a room switch (net.js already updated localState)
     if (st.roomEpoch !== epoch.current) {
@@ -134,24 +174,29 @@ export default function PlayerCar() {
       camera.position.set(p.x - Math.sin(yaw.current) * 12, p.y + 7, p.z - Math.cos(yaw.current) * 12);
     }
 
+    // One fixed-size physics step. Sub-stepping below keeps simulation speed
+    // identical regardless of frame rate — a 10fps machine must not drive a
+    // slower (or through-walls faster) car than a 144fps one.
+    const stepPhysics = (dt) => {
     fwd.current.set(Math.sin(yaw.current), 0, Math.cos(yaw.current));
-    let fSpeed = v.dot(fwd.current); // signed forward speed
+    fSpeed = v.dot(fwd.current); // signed forward speed
 
     const groundH = inHub ? terrainHeight(p.x, p.z) : 0;
     const grounded = p.y <= groundH + 0.25;
     const inWater = inHub && groundH < WATER_LEVEL && p.y < WATER_LEVEL + 0.5;
 
     // --- boost ---
-    const boosting = k.boost && nitro.current > 0 && fSpeed > 2 && !inWater;
-    if (boosting) nitro.current = Math.max(0, nitro.current - NITRO_DRAIN * dt);
+    boosting = k.boost && nitro.current > 0 && fSpeed > 2 && !inWater;
+    if (boosting) nitro.current = Math.max(0, nitro.current - (NITRO_DRAIN / stats.nitro) * dt);
     else nitro.current = Math.min(100, nitro.current + NITRO_REGEN * dt);
     boostRef.current = boosting;
 
     // --- throttle (weak in the air, sluggish in water) ---
+    const engine = ENGINE * stats.accel;
     const throttle = k.up ? 1 : 0;
     const brake = k.down ? 1 : 0;
-    let thrust = throttle * ENGINE - brake * (fSpeed > 1 ? ENGINE * 0.9 : REVERSE);
-    if (boosting) thrust += BOOST_THRUST;
+    let thrust = throttle * engine - brake * (fSpeed > 1 ? engine * 0.9 : REVERSE);
+    if (boosting) thrust += BOOST_THRUST * stats.accel;
     if (!grounded) thrust *= 0.12;
     if (inWater) thrust *= 0.35;
     v.addScaledVector(fwd.current, thrust * dt);
@@ -164,20 +209,20 @@ export default function PlayerCar() {
     fSpeed = v.dot(fwd.current);
     tmp.current.copy(fwd.current).multiplyScalar(fSpeed);
     const lat = v.sub(tmp.current); // v is now lateral only
-    const grip = !grounded ? 0.4 : k.drift ? DRIFT_GRIP : GRIP;
+    const grip = (!grounded ? 0.4 : k.drift ? DRIFT_GRIP : GRIP) * stats.grip;
     lat.multiplyScalar(1 / (1 + grip * dt));
     driftRef.current = clamp(lat.length() / 12, 0, 1);
     v.add(tmp.current);
 
     // --- terrain slope pulls you downhill (hub, grounded only) ---
+    if (inHub) terrainGradient(p.x, p.z, grad.current);
     if (inHub && grounded) {
-      terrainGradient(p.x, p.z, grad.current);
       v.x -= grad.current.x * SLOPE_PULL * dt;
       v.z -= grad.current.z * SLOPE_PULL * dt;
     }
 
     // --- speed caps ---
-    const maxF = boosting ? BOOST_MAX_SPEED : MAX_SPEED;
+    const maxF = (boosting ? BOOST_MAX_SPEED : MAX_SPEED) * stats.speed;
     fSpeed = v.dot(fwd.current);
     if (fSpeed > maxF) v.addScaledVector(fwd.current, maxF - fSpeed);
     if (fSpeed < -12) v.addScaledVector(fwd.current, -12 - fSpeed);
@@ -193,7 +238,14 @@ export default function PlayerCar() {
     p.x += v.x * dt;
     p.z += v.z * dt;
     if (inHub) {
-      vy.current -= GRAVITY * dt;
+      if (grounded) {
+        // follow the slope: climb rate = gradient · velocity. Rolling ground
+        // stays glued; cresting a ridge at speed carries upward vy into a
+        // real jump instead of stuttering micro-airborne on every downhill.
+        vy.current = grad.current.x * v.x + grad.current.z * v.z;
+      } else {
+        vy.current -= GRAVITY * dt;
+      }
       p.y += vy.current * dt;
       const h = terrainHeight(p.x, p.z);
       if (p.y <= h) {
@@ -208,6 +260,12 @@ export default function PlayerCar() {
     portalCooldown.current -= dt;
 
     if (inHub) {
+      // --- crystal charging stations ---
+      chargeCrystals(p.x, p.z, () => {
+        nitro.current = 100;
+        useStore.getState().earn(2, 'crystal charge!');
+      });
+
       // --- hub portals: drive through a ring to enter its minigame ---
       if (portalCooldown.current <= 0) {
         for (const portal of HUB_PORTALS) {
@@ -292,11 +350,21 @@ export default function PlayerCar() {
       }
     }
 
+    }; // end stepPhysics
+
+    let remaining = Math.min(rawDt, 0.12); // cap catch-up after tab switches
+    while (remaining > 1e-4) {
+      stepPhysics(Math.min(remaining, 1 / 50));
+      remaining -= 1 / 50;
+    }
+    const frameDt = Math.min(rawDt, 0.12);
+
     // --- pose: yaw + terrain tilt ---
     if (group.current) {
       group.current.position.copy(p);
       qYaw.current.setFromAxisAngle(UP, yaw.current);
-      if (inHub && grounded) {
+      const groundedNow = !inHub || p.y <= terrainHeight(p.x, p.z) + 0.25;
+      if (inHub && groundedNow) {
         terrainNormal(p.x, p.z, nrm.current);
         nrmV.current.set(nrm.current.x, nrm.current.y, nrm.current.z);
         qTilt.current.setFromUnitVectors(UP, nrmV.current);
@@ -304,7 +372,7 @@ export default function PlayerCar() {
       } else {
         qGoal.current.copy(qYaw.current);
       }
-      group.current.quaternion.slerp(qGoal.current, Math.min(1, 10 * dt));
+      group.current.quaternion.slerp(qGoal.current, Math.min(1, 10 * frameDt));
     }
     speedRef.current = fSpeed;
 
@@ -326,12 +394,12 @@ export default function PlayerCar() {
       const camFloor = terrainHeight(camGoal.current.x, camGoal.current.z) + 2.2;
       if (camGoal.current.y < camFloor) camGoal.current.y = camFloor;
     }
-    const smooth = 1 - Math.exp(-5.5 * dt);
+    const smooth = 1 - Math.exp(-5.5 * frameDt);
     camera.position.lerp(camGoal.current, smooth);
     camera.lookAt(p.x, p.y + 1.6, p.z);
     const targetFov = boosting ? 74 : 62;
     if (Math.abs(camera.fov - targetFov) > 0.1) {
-      camera.fov += (targetFov - camera.fov) * Math.min(1, 4 * dt);
+      camera.fov += (targetFov - camera.fov) * Math.min(1, 4 * frameDt);
       camera.updateProjectionMatrix();
     }
 
@@ -347,7 +415,7 @@ export default function PlayerCar() {
     }
 
     // --- HUD (throttled to ~8Hz) ---
-    hudTimer.current -= dt;
+    hudTimer.current -= frameDt;
     if (hudTimer.current <= 0) {
       hudTimer.current = 0.12;
       useStore.getState().setHud(Math.round(Math.abs(fSpeed) * 3.2), Math.round(nitro.current));
@@ -360,6 +428,7 @@ export default function PlayerCar() {
     <group ref={group}>
       <CarModel
         color={color}
+        carType={carType}
         speedRef={speedRef}
         steerRef={steerRef}
         boostRef={boostRef}

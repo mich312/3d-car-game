@@ -293,6 +293,11 @@ kbd {
   color: #ffc4e2;
 }
 
+.feed-item.gold {
+  border-left-color: #ffd23f;
+  color: #ffe9a8;
+}
+
 @keyframes slide-in {
   from {
     transform: translateX(-16px);
@@ -440,6 +445,156 @@ kbd {
   font-size: 17px;
   color: #eaf0ff;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+/* ---------- garage ---------- */
+
+.lobby-card {
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.garage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.wallet-chip {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffd23f;
+}
+
+.car-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.car-card {
+  padding: 10px;
+  background: rgba(9, 13, 30, 0.9);
+  border: 1.5px solid rgba(125, 139, 191, 0.35);
+  border-radius: 12px;
+  text-align: left;
+}
+
+.car-card.selected {
+  border-color: #3fd7ff;
+  box-shadow: 0 0 14px rgba(63, 215, 255, 0.25);
+}
+
+.car-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+
+.car-name {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.car-price {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd23f;
+}
+
+.car-preview {
+  display: flex;
+  justify-content: center;
+  margin: 2px 0 6px;
+}
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.stat-label {
+  width: 26px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #7d8bbf;
+}
+
+.stat-bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(125, 139, 191, 0.2);
+  overflow: hidden;
+}
+
+.stat-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #3fd7ff, #0affa0);
+}
+
+.car-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #eaf0ff;
+  background: rgba(63, 215, 255, 0.12);
+  border: 1px solid rgba(63, 215, 255, 0.45);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.car-btn:hover:not(:disabled) {
+  background: rgba(63, 215, 255, 0.28);
+}
+
+.car-btn.active {
+  color: #071022;
+  background: #3fd7ff;
+  cursor: default;
+}
+
+.car-btn.buy {
+  border-color: rgba(255, 210, 63, 0.55);
+  background: rgba(255, 210, 63, 0.12);
+  color: #ffe9a8;
+}
+
+.car-btn.buy:hover:not(:disabled) {
+  background: rgba(255, 210, 63, 0.3);
+}
+
+.car-btn:disabled:not(.active) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.garage-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #7d8bbf;
+}
+
+.wallet-pill {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 8px 16px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffd23f;
+  background: rgba(10, 14, 34, 0.72);
+  border: 1px solid rgba(255, 210, 63, 0.35);
+  border-radius: 24px;
+  backdrop-filter: blur(6px);
 }
 
 /* ---------- portal signs (drei Html) ---------- */

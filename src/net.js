@@ -14,11 +14,11 @@ export const localState = { p: [0, 0, 0], yaw: 0, speed: 0, boost: false, spawne
 let ws = null;
 let sendTimer = null;
 
-export function connect(name, color) {
+export function connect(name, color, car) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, color }));
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, color, car }));
 
   ws.onmessage = (e) => {
     let msg;

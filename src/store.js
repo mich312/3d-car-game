@@ -1,8 +1,22 @@
 import { create } from 'zustand';
-import { MODES } from '../shared/config.js';
+import { MODES, CAR_TYPES, DEFAULT_CAR } from '../shared/config.js';
 
 let feedId = 1;
 let bannerTimer = null;
+
+// --- persistent garage (per browser) ---
+const loadJSON = (key, fallback) => {
+  try {
+    const v = JSON.parse(localStorage.getItem(key));
+    return v ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+const savedOwned = loadJSON('nr-owned', [DEFAULT_CAR]).filter((id) => CAR_TYPES[id]);
+const owned = savedOwned.length ? savedOwned : [DEFAULT_CAR];
+const savedCar = localStorage.getItem('nr-cartype');
+const startCar = owned.includes(savedCar) ? savedCar : DEFAULT_CAR;
 
 export const useStore = create((set, get) => ({
   phase: 'lobby', // 'lobby' | 'playing' | 'disconnected'
@@ -22,6 +36,37 @@ export const useStore = create((set, get) => ({
   // HUD values pushed from the local car at a throttled rate
   hudSpeed: 0,
   hudNitro: 100,
+
+  // --- garage / economy (persists in localStorage) ---
+  wallet: Number(localStorage.getItem('nr-wallet')) || 0,
+  ownedCars: owned,
+  carType: startCar,
+  roundEarned: 0, // accumulates quietly, toasted at round end
+
+  earn: (n, why = null) => {
+    const wallet = get().wallet + n;
+    localStorage.setItem('nr-wallet', String(wallet));
+    set((s) => ({ wallet, roundEarned: s.roundEarned + n }));
+    if (why) get().pushFeed(`+${n} 🪙 ${why}`, 'gold');
+  },
+
+  buyCar: (id) => {
+    const t = CAR_TYPES[id];
+    const s = get();
+    if (!t || s.ownedCars.includes(id) || s.wallet < t.price) return;
+    const wallet = s.wallet - t.price;
+    const ownedCars = [...s.ownedCars, id];
+    localStorage.setItem('nr-wallet', String(wallet));
+    localStorage.setItem('nr-owned', JSON.stringify(ownedCars));
+    localStorage.setItem('nr-cartype', id);
+    set({ wallet, ownedCars, carType: id });
+  },
+
+  selectCar: (id) => {
+    if (!get().ownedCars.includes(id)) return;
+    localStorage.setItem('nr-cartype', id);
+    set({ carType: id });
+  },
 
   setHud: (hudSpeed, hudNitro) => set({ hudSpeed, hudNitro }),
   setTimeLeft: (timeLeft) => set({ timeLeft }),
@@ -56,7 +101,7 @@ export const useStore = create((set, get) => ({
     const roster = {};
     const scores = {};
     for (const p of players) {
-      roster[p.id] = { id: p.id, name: p.name, color: p.color, bot: p.bot };
+      roster[p.id] = { id: p.id, name: p.name, color: p.color, car: p.car, bot: p.bot };
       scores[p.id] = p.score;
     }
     set((s) => ({ phase: 'playing', myId: id, players: roster, scores, coins, roomEpoch: s.roomEpoch + 1 }));
@@ -68,7 +113,7 @@ export const useStore = create((set, get) => ({
     const roster = {};
     const scores = {};
     for (const p of players) {
-      roster[p.id] = { id: p.id, name: p.name, color: p.color, bot: p.bot };
+      roster[p.id] = { id: p.id, name: p.name, color: p.color, car: p.car, bot: p.bot };
       scores[p.id] = p.score;
     }
     set((s) => ({
@@ -86,7 +131,7 @@ export const useStore = create((set, get) => ({
 
   playerJoined: (p) => {
     set((s) => ({
-      players: { ...s.players, [p.id]: { id: p.id, name: p.name, color: p.color, bot: p.bot } },
+      players: { ...s.players, [p.id]: { id: p.id, name: p.name, color: p.color, car: p.car, bot: p.bot } },
       scores: { ...s.scores, [p.id]: p.score },
     }));
     get().pushFeed(`${p.name} joined the rumble`);
@@ -109,6 +154,7 @@ export const useStore = create((set, get) => ({
       coins: s.coins.map((c) => (c.id === id ? coin : c)),
       scores: { ...s.scores, [by]: score },
     }));
+    if (by === get().myId) get().earn(1);
   },
 
   steal: ({ from, to, scores }) => {
@@ -119,10 +165,12 @@ export const useStore = create((set, get) => ({
     else if (to === s.myId) s.pushFeed(`You stole a coin from ${victim}!`, 'good');
     else s.pushFeed(`${thief} stole a coin from ${victim}`);
     set((st) => ({ scores: { ...st.scores, ...scores } }));
+    if (to === s.myId) get().earn(1);
   },
 
-  tagged: ({ id }) => {
+  tagged: ({ id, by }) => {
     const s = get();
+    if (by === s.myId) s.earn(3);
     const name = s.players[id]?.name || '???';
     if (id === s.myId) s.pushFeed('You got infected! Spread it!', 'bad');
     else s.pushFeed(`${name} got infected!`);
@@ -143,16 +191,29 @@ export const useStore = create((set, get) => ({
 
   gatePassed: ({ id, n }) => {
     set((s) => ({ scores: { ...s.scores, [id]: n } }));
+    if (id === get().myId) get().earn(2);
   },
 
-  mergeScores: (scores) => set((s) => ({ scores: { ...s.scores, ...scores } })),
+  mergeScores: (scores) => {
+    const s = get();
+    const mine = scores[s.myId];
+    if (typeof mine === 'number' && mine > (s.scores[s.myId] || 0)) {
+      s.earn(mine - (s.scores[s.myId] || 0));
+    }
+    set((st) => ({ scores: { ...st.scores, ...scores } }));
+  },
 
-  roundWon: ({ id, name }) => set({ winner: { id, name } }),
+  roundWon: ({ id, name }) => {
+    set({ winner: { id, name } });
+    if (id === get().myId) get().earn(25, 'round win!');
+  },
 
   roundReset: ({ coins, players, mode, data }) => {
+    const earned = get().roundEarned;
+    if (earned > 0) get().pushFeed(`+${earned} 🪙 earned that round`, 'gold');
     const scores = {};
     for (const p of players) scores[p.id] = p.score;
-    set({ coins, scores, winner: null });
+    set({ coins, scores, winner: null, roundEarned: 0 });
     get().applyModeState(mode, data);
     get().showBanner(mode);
   },

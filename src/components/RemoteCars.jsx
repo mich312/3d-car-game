@@ -63,6 +63,7 @@ function RemoteCar({ info }) {
       <CarModel
         color={info.color}
         name={info.name}
+        carType={info.car}
         speedRef={speedRef}
         steerRef={steerRef}
         boostRef={boostRef}

@@ -22,6 +22,8 @@ import {
   COIN_RADIUS,
   OBSTACLES,
   CAR_COLORS,
+  CAR_TYPES,
+  DEFAULT_CAR,
   MODES,
   GAMES,
   RACE_GATES,
@@ -132,6 +134,7 @@ const publicPlayer = (p) => ({
   id: p.id,
   name: p.name,
   color: p.color,
+  car: p.car,
   bot: !!p.bot,
   p: p.p,
   yaw: p.yaw,
@@ -403,9 +406,9 @@ function tickRace(room) {
 // ---------------------------------------------------------------------------
 
 const BOT_ROSTER = [
-  { name: 'Turbo Tina', color: '#f9ca24' },
-  { name: 'Sir Skidsalot', color: '#00d2d3' },
-  { name: 'Rusty', color: '#ff6b81' },
+  { name: 'Turbo Tina', color: '#f9ca24', car: 'speedster' },
+  { name: 'Sir Skidsalot', color: '#00d2d3', car: 'muscle' },
+  { name: 'Rusty', color: '#ff6b81', car: 'monster' },
 ];
 const MAX_BOTS = 3;
 
@@ -426,6 +429,7 @@ function manageBots(room) {
       id: 'b' + nextId++,
       name: spec.name,
       color: spec.color,
+      car: spec.car,
       bot: true,
       room: room.id,
       p: [rand(-60, 60), 0, rand(-60, 60)],
@@ -570,6 +574,7 @@ wss.on('connection', (ws) => {
         id: 'p' + nextId++,
         name: String(msg.name || 'Racer').slice(0, 16) || 'Racer',
         color: CAR_COLORS.includes(msg.color) ? msg.color : CAR_COLORS[nextId % CAR_COLORS.length],
+        car: CAR_TYPES[msg.car] ? msg.car : DEFAULT_CAR,
         bot: false,
         room: 'hub',
         p: spawn.p,
