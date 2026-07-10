@@ -64,6 +64,12 @@ const smoothstep = (a, b, t) => {
 export const CITY = { x: 300, z: 0, r: 100, h: 3.5 };
 // Ring road circling the plaza — the stunt ramps sit on it.
 export const RING_ROAD = { r: 85, w: 9 };
+// Crystal Grotto: a hidden hollow west of the plaza, reached through a
+// narrow cave pass under the mountains. Packed with charging crystals.
+export const GROTTO = { x: -230, z: 0, r: 50, h: 4 };
+// Highway sprint: cross the start gate east of the plaza, first to the city
+// spire wins. The server times it and keeps the record.
+export const TRIAL = { start: { x: 52, z: 0, r: 9 }, finishR: 22 };
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -92,7 +98,19 @@ export function terrainHeight(x, z) {
     const roadH = PLAZA_HEIGHT + (CITY.h - PLAZA_HEIGHT) * clamp01(x / CITY.x);
     h = h * corridor + roadH * (1 - corridor);
   }
-  return h;
+  // a narrower pass west toward the grotto — tight enough that the tall
+  // sections read as a cave once the arches are on top
+  if (x < 10 && x > GROTTO.x - 40 && Math.abs(z) < 55) {
+    const across = smoothstep(7, 26, Math.abs(z));
+    const along = smoothstep(-10, 30, -x) * (1 - smoothstep(-GROTTO.x, -GROTTO.x + 40, -x));
+    const corridor = 1 - (1 - across) * along;
+    const roadH = PLAZA_HEIGHT + (GROTTO.h - PLAZA_HEIGHT) * clamp01(x / GROTTO.x);
+    h = h * corridor + roadH * (1 - corridor);
+  }
+  // the grotto hollow itself
+  const dg = Math.hypot(x - GROTTO.x, z - GROTTO.z);
+  const flatG = smoothstep(GROTTO.r, GROTTO.r + 45, dg);
+  return h * flatG + GROTTO.h * (1 - flatG);
 }
 
 // Seamless analytic-ish normal via central differences (used for chunk
@@ -172,11 +190,32 @@ function rampAt(x, z, out) {
 
 const _ramp = { h: 0 };
 
+// Roof height under (x, z), or -Infinity when not over a building.
+export function roofAt(x, z) {
+  const dcx = x - CITY.x;
+  const dcz = z - CITY.z;
+  if (dcx * dcx + dcz * dcz > (CITY.r + 5) ** 2) return -Infinity;
+  for (const b of BUILDINGS) {
+    if (Math.abs(x - b.x) <= b.w / 2 && Math.abs(z - b.z) <= b.d / 2) {
+      return CITY.h - 0.3 + b.h;
+    }
+  }
+  return -Infinity;
+}
+
 // The surface cars actually drive on in the hub: terrain OR a ramp on top.
-export function hubHeight(x, z) {
+// Pass the car's y to also land on rooftops — a roof only counts as ground
+// once you're falling onto it, so street-level driving still hits the
+// building walls instead of teleporting up.
+export function hubHeight(x, z, y) {
   const t = terrainHeight(x, z);
   const r = rampAt(x, z, _ramp);
-  return r && _ramp.h > t ? _ramp.h : t;
+  let h = r && _ramp.h > t ? _ramp.h : t;
+  if (y !== undefined) {
+    const rf = roofAt(x, z);
+    if (rf > h && y >= rf - 2) h = rf;
+  }
+  return h;
 }
 
 export function hubGradient(x, z, out = { x: 0, z: 0 }) {
@@ -234,6 +273,23 @@ function makeCity() {
   return list;
 }
 export const BUILDINGS = makeCity();
+
+// Collectible gems on the three tallest towers — reward for rooftop jumps.
+export const ROOF_GEMS = [...BUILDINGS]
+  .sort((a, b) => b.h - a.h)
+  .slice(0, 3)
+  .map((b) => ({ x: b.x, z: b.z, y: CITY.h - 0.3 + b.h + 1.3 }));
+
+// Stone arches over the deep sections of the west pass — they turn the
+// canyon into a tunnel. Client renders them; no physics (open at car level).
+export const TUNNEL_ARCHES = (() => {
+  const arches = [];
+  for (let x = -56; x >= GROTTO.x + GROTTO.r - 4; x -= 8) {
+    const wall = Math.min(terrainHeight(x, -24), terrainHeight(x, 24));
+    if (wall > 11) arches.push({ x, y: terrainHeight(x, 0) });
+  }
+  return arches;
+})();
 
 // --- biome colors -------------------------------------------------------------
 
@@ -350,11 +406,19 @@ export function decorationsForChunk(cx, cz) {
     if (Math.abs(d - RING_ROAD.r) < 10) continue; // ...and the ring road
     if (Math.hypot(x - CITY.x, z - CITY.z) < CITY.r + 20) continue; // ...and the city
     if (x > 20 && x < CITY.x && Math.abs(z) < 24) continue; // ...and the highway
+    const inGrotto = Math.hypot(x - GROTTO.x, z - GROTTO.z) < GROTTO.r;
+    if (!inGrotto && x < -20 && x > GROTTO.x && Math.abs(z) < 16) continue; // cave road
     if (RAMPS.some((r) => (x - r.x) ** 2 + (z - r.z) ** 2 < 26 * 26)) continue;
     const h = terrainHeight(x, z);
     if (h < WATER_LEVEL + 1.5) continue;
     terrainNormal(x, z, nrm);
     const s = 0.7 + hash2(i * 37 + cx, i * 41 + cz) * 0.9;
+    if (inGrotto) {
+      // the grotto is a crystal field — no trees, lots of glow
+      if (kind >= 0.4) crystals.push({ x, y: h, z, s: s * 1.5 });
+      else if (nrm.y > 0.7) rocks.push({ x, y: h, z, s });
+      continue;
+    }
     if (kind < 0.55 && h < 32 && nrm.y > 0.88) trees.push({ x, y: h, z, s });
     else if (kind < 0.9 && nrm.y > 0.7) rocks.push({ x, y: h, z, s });
     else if (kind >= 0.97) crystals.push({ x, y: h, z, s: s * 1.4 });

@@ -59,9 +59,17 @@ export function connect(name, color, car) {
       case 'lobby':
         store.setPortalCounts(msg.counts);
         if (msg.record) store.setAirRecord(msg.record);
+        if (msg.trial) store.setHwRecord(msg.trial);
         break;
       case 'record':
         store.setAirRecord(msg, true);
+        break;
+      case 'hwrecord':
+        store.setHwRecord(msg, true);
+        break;
+      case 'trial':
+        if (msg.phase === 'start') store.pushFeed('⏱ Highway sprint to Neon Heights — GO!', 'good');
+        else if (msg.phase === 'finish') store.finishTrial(msg.time);
         break;
       case 'join':
         remoteStates.set(msg.player.id, {

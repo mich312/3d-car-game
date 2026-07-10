@@ -32,7 +32,7 @@ import {
   TAG_RADIUS,
   HUB_PORTALS,
 } from '../shared/config.js';
-import { HUB_LIMIT, PLAZA_HEIGHT } from '../shared/terrain.js';
+import { HUB_LIMIT, PLAZA_HEIGHT, TRIAL, CITY } from '../shared/terrain.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, '..', 'dist');
@@ -96,6 +96,7 @@ const players = new Map(); // id -> player (player.room = room id)
 let nextId = 1;
 let coinId = 1;
 let airRecord = { name: null, air: 0 }; // best hub jump this server has seen
+let hwRecord = { name: null, time: 0 }; // fastest highway sprint plaza -> city spire
 
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -173,6 +174,7 @@ function spawnFor(roomId) {
 function removeFromRoom(pl) {
   const room = roomOf(pl);
   if (!room) return;
+  pl.trialStart = null; // leaving the hub cancels a highway run
   room.players.delete(pl.id);
   dropCrown(room, pl);
   room.infected.delete(pl.id);
@@ -613,6 +615,29 @@ wss.on('connection', (ws) => {
         me.speed = Number(msg.s) || 0;
         me.boost = !!msg.b;
         if (room) checkCoins(room, me);
+        // --- highway sprint: gate east of the plaza -> the city spire ---
+        if (inHub) {
+          const now = Date.now();
+          if (dist2(me.p[0], me.p[2], TRIAL.start.x, TRIAL.start.z) < TRIAL.start.r ** 2) {
+            // (re)arm the run — crossing the gate again restarts the clock
+            if (!me.trialStart || now - me.trialStart > 5000) {
+              me.trialStart = now;
+              ws.send(JSON.stringify({ t: 'trial', phase: 'start' }));
+            }
+          } else if (me.trialStart) {
+            if (now - me.trialStart > 180000) {
+              me.trialStart = null; // wandered off; quietly forget the run
+            } else if (dist2(me.p[0], me.p[2], CITY.x, CITY.z) < TRIAL.finishR ** 2) {
+              const time = Math.round((now - me.trialStart) / 100) / 10;
+              me.trialStart = null;
+              ws.send(JSON.stringify({ t: 'trial', phase: 'finish', time }));
+              if (!hwRecord.name || time < hwRecord.time) {
+                hwRecord = { name: me.name, time };
+                broadcastRoom(rooms.get('hub'), { t: 'hwrecord', name: me.name, time });
+              }
+            }
+          }
+        }
       }
     } else if (msg.t === 'bump') {
       const room = roomOf(me);
@@ -690,7 +715,12 @@ setInterval(() => {
   if (hub.players.size === 0) return;
   const counts = {};
   for (const g of GAMES) counts[g] = roomHumans(rooms.get(g)).length;
-  broadcastRoom(hub, { t: 'lobby', counts, record: airRecord.name ? airRecord : null });
+  broadcastRoom(hub, {
+    t: 'lobby',
+    counts,
+    record: airRecord.name ? airRecord : null,
+    trial: hwRecord.name ? hwRecord : null,
+  });
 }, 2000);
 
 // Sanity: portals defined in shared config must map to real rooms.

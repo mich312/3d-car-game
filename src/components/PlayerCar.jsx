@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import CarModel from './CarModel.jsx';
 import { localState, remoteStates, sendBump, sendPortal, sendTrick } from '../net.js';
 import { burstFX, addShake, shake } from '../fx.js';
+import { playCrash, playThud, playCoin, playKnock, setBoost } from '../sound.js';
+import { TRAFFIC_CARS, TRAFFIC_RADIUS, trafficPos } from '../traffic.js';
+import { CONES, CONE_RADIUS, knockCone } from '../cones.js';
 import { useStore } from '../store.js';
 import {
   ARENA_HALF,
@@ -23,11 +26,13 @@ import {
   hubHeight,
   hubGradient,
   hubNormal,
+  roofAt,
   decorationsForChunk,
   CHUNK_SIZE,
   WATER_LEVEL,
   CITY,
   BUILDINGS,
+  ROOF_GEMS,
 } from '../../shared/terrain.js';
 
 // Tuning
@@ -140,7 +145,10 @@ export default function PlayerCar() {
   const epoch = useRef(-1);
   const crashRef = useRef({ mag: 0, t: 0 }); // CarModel body wobble after hits
   const flashCooldown = useRef(0); // throttle the HUD impact flash
-  const air = useRef({ active: false, t: 0, x: 0, z: 0 }); // hub jump tracking
+  const air = useRef({ active: false, t: 0, x: 0, z: 0, spin: 0, lastYaw: 0 }); // hub jump tracking
+  const gemCooldown = useRef(new Map()); // rooftop gem index -> next allowed ms
+  const prevBoost = useRef(false); // edge-detect for the boost sound loop
+  const trafficScratch = useRef({ x: 0, z: 0, yaw: 0 });
 
   // Refs consumed by CarModel for wheel/flame animation
   const speedRef = useRef(0);
@@ -174,6 +182,7 @@ export default function PlayerCar() {
     const onImpact = (power, x, y, z, nx, nz, color) => {
       if (power < 7) return;
       const k = clamp((power - 7) / 28, 0, 1);
+      playCrash(power);
       addShake(0.22 + k * 0.5);
       crashRef.current.mag = Math.min(1, 0.35 + k);
       crashRef.current.t = 0;
@@ -196,8 +205,9 @@ export default function PlayerCar() {
       }
     };
 
-    // Big-air bookkeeping: dust + shake on touchdown, records past 1s of air.
-    const onLanding = (airTime, dist, vyImpact) => {
+    // Big-air bookkeeping: dust + shake on touchdown, records past 0.8s of
+    // air, spin bonuses, and extra coins for sticking a rooftop.
+    const onLanding = (airTime, dist, vyImpact, spin) => {
       const hard = clamp(Math.abs(vyImpact) / 34, 0, 1);
       burstFX(p.x, p.y + 0.2, p.z, {
         kind: 'sparks',
@@ -212,13 +222,17 @@ export default function PlayerCar() {
         size: 0.42,
       });
       addShake(0.12 + hard * 0.4);
+      playThud(hard);
       if (hard > 0.5) {
         crashRef.current.mag = Math.min(1, hard);
         crashRef.current.t = 0;
       }
       if (airTime >= 0.8) {
-        useStore.getState().landJump(airTime, dist);
+        useStore.getState().landJump(airTime, dist, spin);
         sendTrick(airTime, dist);
+      }
+      if (airTime >= 0.45 && Math.abs(p.y - roofAt(p.x, p.z)) < 0.6) {
+        useStore.getState().earn(3, '🏙 rooftop landing!');
       }
     };
 
@@ -243,8 +257,9 @@ export default function PlayerCar() {
     fwd.current.set(Math.sin(yaw.current), 0, Math.cos(yaw.current));
     fSpeed = v.dot(fwd.current); // signed forward speed
 
-    const groundH = inHub ? hubHeight(p.x, p.z) : 0;
+    const groundH = inHub ? hubHeight(p.x, p.z, p.y) : 0;
     const grounded = p.y <= groundH + 0.25;
+    const onRoof = inHub && grounded && groundH === roofAt(p.x, p.z);
     const inWater = inHub && groundH < WATER_LEVEL && p.y < WATER_LEVEL + 0.5;
 
     // --- boost ---
@@ -276,8 +291,15 @@ export default function PlayerCar() {
     driftRef.current = clamp(lat.length() / 12, 0, 1);
     v.add(tmp.current);
 
-    // --- terrain slope pulls you downhill (hub, grounded only) ---
-    if (inHub) hubGradient(p.x, p.z, grad.current);
+    // --- terrain slope pulls you downhill (hub, grounded only; roofs are flat) ---
+    if (inHub) {
+      if (onRoof) {
+        grad.current.x = 0;
+        grad.current.z = 0;
+      } else {
+        hubGradient(p.x, p.z, grad.current);
+      }
+    }
     if (inHub && grounded) {
       v.x -= grad.current.x * SLOPE_PULL * dt;
       v.z -= grad.current.z * SLOPE_PULL * dt;
@@ -289,11 +311,11 @@ export default function PlayerCar() {
     if (fSpeed > maxF) v.addScaledVector(fwd.current, maxF - fSpeed);
     if (fSpeed < -12) v.addScaledVector(fwd.current, -12 - fSpeed);
 
-    // --- steering (reduced mid-air) ---
+    // --- steering (reduced mid-air, unless drifting: SPACE whips spins) ---
     const steer = (k.left ? 1 : 0) - (k.right ? 1 : 0);
     steerRef.current = steer;
     const speedFactor = clamp(Math.abs(fSpeed) / 8, 0, 1) * Math.sign(fSpeed || 1);
-    const airFactor = grounded ? 1 : 0.35;
+    const airFactor = grounded ? 1 : k.drift ? 1.25 : 0.35;
     yaw.current += steer * STEER_RATE * (k.drift ? 1.45 : 1) * speedFactor * airFactor * dt;
 
     // --- integrate planar + vertical ---
@@ -307,23 +329,29 @@ export default function PlayerCar() {
         vy.current = grad.current.x * v.x + grad.current.z * v.z;
       } else {
         vy.current -= GRAVITY * dt;
-        // clock the jump for air-time records
+        // clock the jump (and any spin) for air-time records
         if (!air.current.active) {
           air.current.active = true;
           air.current.t = 0;
+          air.current.spin = 0;
+          air.current.lastYaw = yaw.current;
           air.current.x = p.x;
           air.current.z = p.z;
         }
         air.current.t += dt;
+        air.current.spin += Math.abs(yaw.current - air.current.lastYaw);
+        air.current.lastYaw = yaw.current;
       }
       p.y += vy.current * dt;
-      const h = hubHeight(p.x, p.z);
+      const h = hubHeight(p.x, p.z, p.y);
       if (p.y <= h) {
         if (air.current.active && air.current.t > 0.45) {
+          p.y = h; // settle first so the rooftop check sees the final spot
           onLanding(
             air.current.t,
             Math.hypot(p.x - air.current.x, p.z - air.current.z),
-            vy.current
+            vy.current,
+            air.current.spin
           );
         }
         air.current.active = false;
@@ -342,7 +370,69 @@ export default function PlayerCar() {
       chargeCrystals(p.x, p.z, () => {
         nitro.current = 100;
         useStore.getState().earn(2, 'crystal charge!');
+        playCoin();
       });
+
+      // --- rooftop gems (worth more; you have to land up there) ---
+      for (let i = 0; i < ROOF_GEMS.length; i++) {
+        const g = ROOF_GEMS[i];
+        const dx = p.x - g.x;
+        const dy = p.y - g.y;
+        const dz = p.z - g.z;
+        if (dx * dx + dy * dy + dz * dz < 3.5 * 3.5) {
+          const now = performance.now();
+          if ((gemCooldown.current.get(i) || 0) <= now) {
+            gemCooldown.current.set(i, now + 60000);
+            nitro.current = 100;
+            useStore.getState().earn(5, '💎 rooftop gem!');
+            playCoin();
+          }
+        }
+      }
+
+      // --- knockable cones ---
+      for (const c of CONES) {
+        if (c.knocked) continue;
+        const dx = p.x - c.x;
+        const dz = p.z - c.z;
+        if (dx * dx + dz * dz < CONE_RADIUS * CONE_RADIUS && Math.abs(p.y - c.y) < 2) {
+          knockCone(c, v.x, v.z, fSpeed);
+          playKnock();
+          burstFX(c.x, c.y + 0.6, c.z, {
+            kind: 'sparks',
+            count: 5,
+            color: '#ff9a3d',
+            speed: 5,
+            size: 0.18,
+            ttl: 0.4,
+          });
+        }
+      }
+
+      // --- city traffic: they have right of way (and infinite mass) ---
+      const nearCity = (p.x - CITY.x) ** 2 + (p.z - CITY.z) ** 2 < (CITY.r + 20) ** 2;
+      if (nearCity) {
+        const tNow = Date.now() / 1000;
+        for (let i = 0; i < TRAFFIC_CARS.length; i++) {
+          const tc = trafficPos(i, tNow, trafficScratch.current);
+          const dx = p.x - tc.x;
+          const dz = p.z - tc.z;
+          const d = Math.hypot(dx, dz);
+          const min = CAR_RADIUS + TRAFFIC_RADIUS;
+          if (d < min && d > 0.0001 && p.y < CITY.h + 3) {
+            const nx = dx / d;
+            const nz = dz / d;
+            p.x = tc.x + nx * min;
+            p.z = tc.z + nz * min;
+            const vn = v.x * nx + v.z * nz;
+            if (vn < 0) {
+              onImpact(-vn, tc.x + nx * TRAFFIC_RADIUS, p.y + 0.7, tc.z + nz * TRAFFIC_RADIUS, nx, nz, '#ffe08a');
+              v.x -= nx * vn * 1.5;
+              v.z -= nz * vn * 1.5;
+            }
+          }
+        }
+      }
 
       // --- hub portals: drive through a ring to enter its minigame ---
       if (portalCooldown.current <= 0) {
@@ -501,6 +591,12 @@ export default function PlayerCar() {
     }
     speedRef.current = fSpeed;
 
+    // --- boost hiss follows the nitro state ---
+    if (boosting !== prevBoost.current) {
+      prevBoost.current = boosting;
+      setBoost(boosting);
+    }
+
     // --- publish to network ---
     localState.p[0] = p.x;
     localState.p[1] = p.y;
@@ -516,7 +612,7 @@ export default function PlayerCar() {
       .addScaledVector(fwd.current, -camDist)
       .add(tmp.current.set(0, 5.6 + Math.abs(fSpeed) * 0.03, 0));
     if (inHub) {
-      const camFloor = hubHeight(camGoal.current.x, camGoal.current.z) + 2.2;
+      const camFloor = hubHeight(camGoal.current.x, camGoal.current.z, camGoal.current.y) + 2.2;
       if (camGoal.current.y < camFloor) camGoal.current.y = camFloor;
     }
     const smooth = 1 - Math.exp(-5.5 * frameDt);

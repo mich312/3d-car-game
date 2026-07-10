@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useStore } from '../store.js';
 import { localState, remoteStates } from '../net.js';
 import { ARENA_HALF, OBSTACLES, MODES, RACE_GATES, HUB_PORTALS } from '../../shared/config.js';
-import { RAMPS, RING_ROAD, CITY } from '../../shared/terrain.js';
+import { RAMPS, RING_ROAD, CITY, GROTTO } from '../../shared/terrain.js';
 
 function Minimap() {
   const canvasRef = useRef(null);
@@ -53,6 +53,18 @@ function Minimap() {
         ctx.strokeStyle = 'rgba(255, 93, 177, 0.55)';
         ctx.beginPath();
         ctx.arc(ctx0, cty0, CITY.r * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        // Crystal Grotto + its cave road
+        const [gx0, gy0] = toMap(GROTTO.x, GROTTO.z);
+        ctx.strokeStyle = 'rgba(125, 249, 255, 0.55)';
+        ctx.beginPath();
+        ctx.arc(gx0, gy0, GROTTO.r * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        const [wx0, wy0] = toMap(-42, 0);
+        ctx.strokeStyle = 'rgba(140, 155, 220, 0.45)';
+        ctx.beginPath();
+        ctx.moveTo(wx0, wy0);
+        ctx.lineTo(gx0, gy0);
         ctx.stroke();
         // stunt ramps
         ctx.fillStyle = '#ffd23f';
@@ -169,7 +181,9 @@ export default function Hud() {
   const impactNonce = useStore((s) => s.impactNonce);
   const bestAir = useStore((s) => s.bestAir);
   const bestJump = useStore((s) => s.bestJump);
+  const bestHw = useStore((s) => s.bestHw);
   const airRecord = useStore((s) => s.airRecord);
+  const hwRecord = useStore((s) => s.hwRecord);
 
   const ranked = Object.values(players)
     .map((p) => ({ ...p, score: scores[p.id] || 0, sick: infected.includes(p.id) }))
@@ -213,8 +227,8 @@ export default function Hud() {
             <span className="pscore">{scoreCell(p)}</span>
           </div>
         ))}
-        {/* stunt records (hub only) */}
-        {mode === 'hub' && (bestAir > 0 || airRecord) && (
+        {/* stunt + sprint records (hub only) */}
+        {mode === 'hub' && (bestAir > 0 || airRecord || bestHw > 0 || hwRecord) && (
           <div className="records-line">
             {bestAir > 0 && (
               <div>
@@ -224,6 +238,12 @@ export default function Hud() {
             {airRecord && (
               <div>
                 🏆 air record: {airRecord.air}s — {airRecord.name}
+              </div>
+            )}
+            {bestHw > 0 && <div>🛣 your sprint: {bestHw}s</div>}
+            {hwRecord && (
+              <div>
+                🏆 sprint record: {hwRecord.time}s — {hwRecord.name}
               </div>
             )}
           </div>

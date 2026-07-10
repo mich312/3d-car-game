@@ -25,10 +25,22 @@ Around the plaza runs a **stunt ring road** lined with neon-railed jump
 ramps — one of them a mega kicker. Big air pays coins, posts your air-time
 and jump-distance **personal bests** (persisted in your browser), and the
 longest air anyone has pulled off becomes the **server-wide air record**,
-announced to every driver in the hub. Follow the **highway east** through a
-canyon pass (jump included) to reach **Neon Heights**, a glowing city
-district with solid buildings, streets, and a beacon spire you can see from
-the mountains.
+announced to every driver in the hub. Hold <kbd>Space</kbd> mid-air to whip
+the car around — stick a **180 or 360 spin** for bonus coins.
+
+Follow the **highway east** through a canyon pass (jump and cone slalom
+included) to reach **Neon Heights**, a glowing city district with solid
+buildings, glowing street lamps, and dummy **traffic** cruising the streets.
+Crossing the **HIGHWAY SPRINT** gate east of the plaza starts a server-timed
+race to the city spire — fastest run holds the **sprint record**. Land on a
+rooftop for bonus coins; the three tallest towers hide **rooftop gems**
+(+5 🪙 and a full nitro refill).
+
+Head **west** instead and the road narrows into an arched cave pass that
+opens into the **Crystal Grotto**, a hollow packed with charging crystals.
+
+Every crash throws sparks, and everything makes noise — the sounds are
+synthesized live with WebAudio (no downloads).
 
 ## Minigames
 

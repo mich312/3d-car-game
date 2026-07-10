@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CAR_COLORS, CAR_TYPES } from '../../shared/config.js';
 import { connect } from '../net.js';
+import { initAudio } from '../sound.js';
 import { useStore } from '../store.js';
 
 function StatBar({ label, value }) {
@@ -112,6 +113,7 @@ export default function Lobby() {
     localStorage.setItem('nr-name', finalName);
     localStorage.setItem('nr-color', color);
     setJoining(true);
+    initAudio(); // WebAudio needs a user gesture — this click is it
     connect(finalName, color, useStore.getState().carType);
   };
 
