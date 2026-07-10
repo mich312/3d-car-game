@@ -21,6 +21,27 @@ At the center is a neon **portal plaza**: drive into a ring (or press
 live player counts. A green exit ring in every arena (or <kbd>0</kbd>) brings
 you back to the world.
 
+Around the plaza runs a **stunt ring road** lined with neon-railed jump
+ramps — one of them a mega kicker. Big air pays coins, posts your air-time
+and jump-distance **personal bests** (persisted in your browser), and the
+longest air anyone has pulled off becomes the **server-wide air record**,
+announced to every driver in the hub. Hold <kbd>Space</kbd> mid-air to whip
+the car around — stick a **180 or 360 spin** for bonus coins.
+
+Follow the **highway east** through a canyon pass (jump and cone slalom
+included) to reach **Neon Heights**, a glowing city district with solid
+buildings, glowing street lamps, and dummy **traffic** cruising the streets.
+Crossing the **HIGHWAY SPRINT** gate east of the plaza starts a server-timed
+race to the city spire — fastest run holds the **sprint record**. Land on a
+rooftop for bonus coins; the three tallest towers hide **rooftop gems**
+(+5 🪙 and a full nitro refill).
+
+Head **west** instead and the road narrows into an arched cave pass that
+opens into the **Crystal Grotto**, a hollow packed with charging crystals.
+
+Every crash throws sparks, and everything makes noise — the sounds are
+synthesized live with WebAudio (no downloads).
+
 ## Minigames
 
 Each minigame runs in its own room with its own round loop, and AI bots fill
@@ -45,6 +66,10 @@ the arena whenever you're alone — every game works solo or multiplayer.
 - **Nitro boost** — hold <kbd>Shift</kbd> to burn nitro (FOV kick + exhaust
   flames). Nitro regenerates slowly, or instantly refills on the green
   **boost pads**, which also launch you.
+- **Crunchy crashes** — every hard hit throws a burst of sparks and a
+  shockwave ring at the contact point, shakes the camera (trauma-style,
+  scaled to impact speed), wobbles the car body on its suspension, and
+  flashes the screen edges red on really big ones. Landings kick up dust.
 - **Server-authoritative rules** — coins, steals, infections, crown snatches,
   gate progress, and round wins are all decided server-side.
 - **HUD** — mode banner + round timer, adaptive scoreboard, speedometer,

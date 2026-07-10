@@ -230,6 +230,34 @@ kbd {
   color: #ffd23f;
 }
 
+.impact-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 60, 80, 0.4) 100%);
+  animation: impact-fade 0.45s ease-out forwards;
+}
+
+@keyframes impact-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.records-line {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(63, 215, 255, 0.18);
+  font-size: 11.5px;
+  color: #a9b6e0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .winner-banner {
   position: absolute;
   top: 18%;

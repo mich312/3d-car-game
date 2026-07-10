@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { MODES, CAR_TYPES, DEFAULT_CAR } from '../shared/config.js';
+import { playCoin, playFanfare } from './sound.js';
 
 let feedId = 1;
 let bannerTimer = null;
@@ -42,6 +43,69 @@ export const useStore = create((set, get) => ({
   ownedCars: owned,
   carType: startCar,
   roundEarned: 0, // accumulates quietly, toasted at round end
+
+  // --- crash flash + stunt records ---
+  impactNonce: 0, // bumped on hard hits; HUD keys a red flash off it
+  bestAir: Number(localStorage.getItem('nr-best-air')) || 0, // personal, seconds
+  bestJump: Number(localStorage.getItem('nr-best-jump')) || 0, // personal, meters
+  bestHw: Number(localStorage.getItem('nr-best-hw')) || 0, // personal sprint, seconds
+  airRecord: null, // { name, air } — server-wide, from the hub
+  hwRecord: null, // { name, time } — server-wide highway sprint
+
+  impact: () => set((s) => ({ impactNonce: s.impactNonce + 1 })),
+
+  landJump: (airTime, dist, spin = 0) => {
+    const s = get();
+    const airR = Math.round(airTime * 10) / 10;
+    const d = Math.round(dist);
+    s.pushFeed(`✈️ ${airR}s air · ${d}m jump!`, 'good');
+    s.earn(Math.min(8, Math.max(1, Math.round(airTime * 2))), 'stunt air');
+    // spin tricks (hold SPACE mid-air to whip the car around)
+    if (spin >= Math.PI * 1.8) s.earn(6, '🌀 360 SPIN!');
+    else if (spin >= Math.PI * 0.9) s.earn(2, '↪ 180 spin');
+    let improved = false;
+    if (airR > s.bestAir) {
+      localStorage.setItem('nr-best-air', String(airR));
+      set({ bestAir: airR });
+      improved = true;
+    }
+    if (d > s.bestJump) {
+      localStorage.setItem('nr-best-jump', String(d));
+      set({ bestJump: d });
+      improved = true;
+    }
+    if (improved) s.pushFeed('🏅 new personal best!', 'gold');
+  },
+
+  finishTrial: (time) => {
+    const s = get();
+    if (!(time > 0)) return;
+    s.pushFeed(`⏱ Neon Heights in ${time}s!`, 'good');
+    s.earn(5, 'highway sprint');
+    if (!s.bestHw || time < s.bestHw) {
+      localStorage.setItem('nr-best-hw', String(time));
+      set({ bestHw: time });
+      s.pushFeed('🏅 new personal best!', 'gold');
+    }
+  },
+
+  setAirRecord: (rec, announce = false) => {
+    if (!rec || !rec.name || !(rec.air > 0)) return;
+    set({ airRecord: { name: rec.name, air: rec.air } });
+    if (announce) {
+      get().pushFeed(`🏆 ${rec.name} set the AIR RECORD — ${rec.air}s!`, 'gold');
+      playFanfare();
+    }
+  },
+
+  setHwRecord: (rec, announce = false) => {
+    if (!rec || !rec.name || !(rec.time > 0)) return;
+    set({ hwRecord: { name: rec.name, time: rec.time } });
+    if (announce) {
+      get().pushFeed(`🏆 ${rec.name} — highway record, ${rec.time}s!`, 'gold');
+      playFanfare();
+    }
+  },
 
   earn: (n, why = null) => {
     const wallet = get().wallet + n;
@@ -154,7 +218,10 @@ export const useStore = create((set, get) => ({
       coins: s.coins.map((c) => (c.id === id ? coin : c)),
       scores: { ...s.scores, [by]: score },
     }));
-    if (by === get().myId) get().earn(1);
+    if (by === get().myId) {
+      get().earn(1);
+      playCoin();
+    }
   },
 
   steal: ({ from, to, scores }) => {
@@ -165,7 +232,10 @@ export const useStore = create((set, get) => ({
     else if (to === s.myId) s.pushFeed(`You stole a coin from ${victim}!`, 'good');
     else s.pushFeed(`${thief} stole a coin from ${victim}`);
     set((st) => ({ scores: { ...st.scores, ...scores } }));
-    if (to === s.myId) get().earn(1);
+    if (to === s.myId) {
+      get().earn(1);
+      playCoin();
+    }
   },
 
   tagged: ({ id, by }) => {
