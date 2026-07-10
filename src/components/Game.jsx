@@ -1,7 +1,8 @@
 import React from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Sky, Stars, Environment, Lightformer } from '@react-three/drei';
+import { Stars } from '@react-three/drei';
 import { useStore } from '../store.js';
+import SkyCubemap from './SkyCubemap.jsx';
 import Arena from './Arena.jsx';
 import HubWorld from './HubWorld.jsx';
 import Coins from './Coins.jsx';
@@ -21,14 +22,17 @@ export default function Game() {
       dpr={[1, 1.5]}
       camera={{ fov: 62, near: 0.5, far: 1200, position: [0, 40, -60] }}
     >
-      <color attach="background" args={['#0a0f24']} />
       {inHub ? (
         <fog attach="fog" args={['#26355f', 160, 560]} />
       ) : (
         <fog attach="fog" args={['#131a38', 140, 480]} />
       )}
-      <Sky
-        distance={450000}
+
+      {/* A real cubemap: the physical-sky shader baked into all six faces of a
+          CubeCamera render target, then used as the skybox background AND the
+          PMREM environment. Car paint, glass, and water reflect the actual sky
+          above them — sun spot and all. Re-baked only when the sky changes. */}
+      <SkyCubemap
         sunPosition={inHub ? [120, 45, -80] : [80, 12, -120]}
         turbidity={inHub ? 6 : 8}
         rayleigh={inHub ? 1.6 : 2.5}
@@ -38,17 +42,6 @@ export default function Game() {
 
       <ambientLight intensity={0.55} color="#8fa8ff" />
       <hemisphereLight args={['#7f9bea', '#2a2148', 0.7]} />
-
-      {/* Static procedural environment map: rendered ONCE (frames={1}) into a
-          256px cubemap — free at runtime, no downloads. Gives car paint,
-          glass, and water something to reflect. */}
-      <Environment frames={1} resolution={256} background={false}>
-        <color attach="background" args={['#0d1430']} />
-        <Lightformer form="rect" intensity={3} color="#8fb8ff" scale={[40, 6, 1]} position={[0, 4, -20]} />
-        <Lightformer form="rect" intensity={1.6} color="#ff9ac4" scale={[40, 5, 1]} position={[0, 3, 20]} rotation-y={Math.PI} />
-        <Lightformer form="rect" intensity={8} color="#ffe9c0" scale={[8, 8, 1]} position={[18, 14, -12]} target={[0, 0, 0]} />
-        <Lightformer form="ring" intensity={2} color="#bcd6ff" scale={12} position={[0, 18, 0]} target={[0, 0, 0]} />
-      </Environment>
 
       {inHub ? (
         <HubWorld />
