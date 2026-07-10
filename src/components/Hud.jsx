@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useStore } from '../store.js';
 import { localState, remoteStates } from '../net.js';
 import { ARENA_HALF, OBSTACLES, MODES, RACE_GATES, HUB_PORTALS } from '../../shared/config.js';
+import { RAMPS, RING_ROAD, CITY } from '../../shared/terrain.js';
 
 function Minimap() {
   const canvasRef = useRef(null);
@@ -33,6 +34,33 @@ function Minimap() {
       ctx.strokeRect(1, 1, S - 2, S - 2);
 
       if (inHub) {
+        const scale = S / (HUB_RANGE * 2);
+        // ring road + highway east
+        ctx.strokeStyle = 'rgba(140, 155, 220, 0.45)';
+        ctx.lineWidth = 2;
+        const [cx0, cy0] = toMap(0, 0);
+        ctx.beginPath();
+        ctx.arc(cx0, cy0, RING_ROAD.r * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        const [hx0, hy0] = toMap(42, 0);
+        const [hx1, hy1] = toMap(CITY.x, 0);
+        ctx.beginPath();
+        ctx.moveTo(hx0, hy0);
+        ctx.lineTo(hx1, hy1);
+        ctx.stroke();
+        // Neon Heights footprint
+        const [ctx0, cty0] = toMap(CITY.x, CITY.z);
+        ctx.strokeStyle = 'rgba(255, 93, 177, 0.55)';
+        ctx.beginPath();
+        ctx.arc(ctx0, cty0, CITY.r * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        // stunt ramps
+        ctx.fillStyle = '#ffd23f';
+        for (const r of RAMPS) {
+          const [x, y] = toMap(r.x, r.z);
+          if (x < -4 || x > S + 4 || y < -4 || y > S + 4) continue;
+          ctx.fillRect(x - 2, y - 2, 4, 4);
+        }
         // portal markers
         for (const portal of HUB_PORTALS) {
           const [x, y] = toMap(portal.x, portal.z);
@@ -138,6 +166,10 @@ export default function Hud() {
   const hudSpeed = useStore((s) => s.hudSpeed);
   const hudNitro = useStore((s) => s.hudNitro);
   const wallet = useStore((s) => s.wallet);
+  const impactNonce = useStore((s) => s.impactNonce);
+  const bestAir = useStore((s) => s.bestAir);
+  const bestJump = useStore((s) => s.bestJump);
+  const airRecord = useStore((s) => s.airRecord);
 
   const ranked = Object.values(players)
     .map((p) => ({ ...p, score: scores[p.id] || 0, sick: infected.includes(p.id) }))
@@ -155,6 +187,9 @@ export default function Hud() {
 
   return (
     <div className="hud">
+      {/* red edge flash on hard crashes (remounts per impact to replay) */}
+      {impactNonce > 0 && <div key={impactNonce} className="impact-flash" />}
+
       {/* mode + round timer */}
       <div className="mode-pill">
         <span className="mode-name">{MODES[mode]?.name || mode}</span>
@@ -178,6 +213,21 @@ export default function Hud() {
             <span className="pscore">{scoreCell(p)}</span>
           </div>
         ))}
+        {/* stunt records (hub only) */}
+        {mode === 'hub' && (bestAir > 0 || airRecord) && (
+          <div className="records-line">
+            {bestAir > 0 && (
+              <div>
+                ✈️ your best: {bestAir}s air · {bestJump}m
+              </div>
+            )}
+            {airRecord && (
+              <div>
+                🏆 air record: {airRecord.air}s — {airRecord.name}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* round-start mode banner */}
@@ -228,7 +278,7 @@ export default function Hud() {
 
       <div className="hint">
         {mode === 'hub'
-          ? 'WASD drive · SHIFT nitro · drive into a portal (or press 1-4) to play'
+          ? 'WASD drive · SHIFT nitro · hit the yellow ramps for air records · portals (or 1-4) start a game'
           : 'WASD drive · SHIFT nitro · SPACE drift · green ring (or 0) returns to the world'}
       </div>
     </div>

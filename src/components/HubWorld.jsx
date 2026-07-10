@@ -13,6 +13,11 @@ import {
   PLAZA_HEIGHT,
   buildChunkData,
   decorationsForChunk,
+  terrainHeight,
+  RAMPS,
+  RING_ROAD,
+  CITY,
+  BUILDINGS,
 } from '../../shared/terrain.js';
 
 // ---------------------------------------------------------------------------
@@ -141,6 +146,218 @@ function Water() {
         metalness={0.55}
       />
     </mesh>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stunt ramps — visual twins of the analytic wedges in shared/terrain.js
+// ---------------------------------------------------------------------------
+
+function Ramp({ ramp }) {
+  const geometry = useMemo(() => {
+    // right-triangle profile extruded across the width, oriented so local +z
+    // runs up the ramp (matches the physics wedge exactly)
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(ramp.l, 0);
+    shape.lineTo(ramp.l, ramp.h);
+    shape.closePath();
+    const g = new THREE.ExtrudeGeometry(shape, { depth: ramp.w, bevelEnabled: false });
+    g.rotateY(-Math.PI / 2); // shape-x (along) -> +z, extrude depth -> -x
+    g.translate(ramp.w / 2, 0, 0);
+    return g;
+  }, [ramp]);
+
+  const slopeLen = Math.hypot(ramp.l, ramp.h);
+  const pitch = -Math.atan2(ramp.h, ramp.l);
+
+  return (
+    <group position={[ramp.x, ramp.baseY, ramp.z]} rotation-y={ramp.yaw}>
+      <mesh geometry={geometry} castShadow receiveShadow>
+        <meshStandardMaterial color="#252d5c" roughness={0.6} metalness={0.15} />
+      </mesh>
+      {/* neon rails along both sloped edges */}
+      {[ramp.w / 2, -ramp.w / 2].map((x, i) => (
+        <mesh key={i} position={[x, ramp.h / 2 + 0.1, ramp.l / 2]} rotation-x={pitch}>
+          <boxGeometry args={[0.28, 0.24, slopeLen]} />
+          <meshStandardMaterial color="#ffd23f" emissive="#ffd23f" emissiveIntensity={1.6} toneMapped={false} />
+        </mesh>
+      ))}
+      {/* lip marker at the launch edge */}
+      <mesh position={[0, ramp.h + 0.08, ramp.l - 0.2]}>
+        <boxGeometry args={[ramp.w, 0.16, 0.4]} />
+        <meshStandardMaterial color="#3fd7ff" emissive="#3fd7ff" emissiveIntensity={1.8} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Roads — flat ribbons draped over the terrain (visual guides, no physics)
+// ---------------------------------------------------------------------------
+
+function ribbonGeometry(points, width, lift) {
+  const n = points.length;
+  const positions = new Float32Array(n * 2 * 3);
+  const normals = new Float32Array(n * 2 * 3);
+  for (let i = 0; i < n; i++) {
+    const p = points[i];
+    const q = points[Math.min(i + 1, n - 1)];
+    const pr = points[Math.max(i - 1, 0)];
+    let dx = q.x - pr.x;
+    let dz = q.z - pr.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const px = (-dz / len) * (width / 2);
+    const pz = (dx / len) * (width / 2);
+    const o = i * 6;
+    positions[o] = p.x + px;
+    positions[o + 1] = terrainHeight(p.x + px, p.z + pz) + lift;
+    positions[o + 2] = p.z + pz;
+    positions[o + 3] = p.x - px;
+    positions[o + 4] = terrainHeight(p.x - px, p.z - pz) + lift;
+    positions[o + 5] = p.z - pz;
+    for (let k = 0; k < 2; k++) normals[o + k * 3 + 1] = 1;
+  }
+  const indices = [];
+  for (let i = 0; i < n - 1; i++) {
+    const a = i * 2;
+    indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  g.setIndex(indices);
+  return g;
+}
+
+function Road({ points, width = 8 }) {
+  const { asphalt, line } = useMemo(
+    () => ({
+      asphalt: ribbonGeometry(points, width, 0.09),
+      line: ribbonGeometry(points, 0.45, 0.14),
+    }),
+    [points, width]
+  );
+  return (
+    <group>
+      <mesh geometry={asphalt} receiveShadow>
+        <meshStandardMaterial color="#1a2140" roughness={0.85} metalness={0.05} />
+      </mesh>
+      <mesh geometry={line}>
+        <meshBasicMaterial color="#3fd7ff" toneMapped={false} transparent opacity={0.75} />
+      </mesh>
+    </group>
+  );
+}
+
+function Roads() {
+  const { ring, highway } = useMemo(() => {
+    const ring = [];
+    const SEGS = 160;
+    for (let i = 0; i <= SEGS; i++) {
+      const a = (i / SEGS) * Math.PI * 2;
+      ring.push({ x: Math.sin(a) * RING_ROAD.r, z: Math.cos(a) * RING_ROAD.r });
+    }
+    const highway = [];
+    for (let x = 42; x <= CITY.x + 70; x += 4) highway.push({ x, z: 0 });
+    return { ring, highway };
+  }, []);
+  return (
+    <group>
+      <Road points={ring} width={RING_ROAD.w} />
+      <Road points={highway} width={10} />
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Neon Heights — instanced towers with glowing roofs and window strips
+// ---------------------------------------------------------------------------
+
+const NEON = ['#3fd7ff', '#ff5db1', '#ffd23f', '#0affa0'];
+const BODY_TONES = ['#141a33', '#181f3f', '#10152b', '#1c2348'];
+
+function CityBlocks() {
+  const bodies = useRef();
+  const roofs = useRef();
+  const strips = useRef();
+
+  useLayoutEffect(() => {
+    const color = new THREE.Color();
+    BUILDINGS.forEach((b, i) => {
+      const baseY = CITY.h - 0.3;
+      _q.identity();
+      // body
+      _m.compose(_v.set(b.x, baseY + b.h / 2, b.z), _q, _s.set(b.w, b.h, b.d));
+      bodies.current.setMatrixAt(i, _m);
+      bodies.current.setColorAt(i, color.set(BODY_TONES[b.tone]));
+      // glowing roof rim
+      _m.compose(_v.set(b.x, baseY + b.h + 0.08, b.z), _q, _s.set(b.w + 0.4, 0.18, b.d + 0.4));
+      roofs.current.setMatrixAt(i, _m);
+      roofs.current.setColorAt(i, color.set(NEON[b.tone]));
+      // vertical window strip poking through two opposite faces
+      const sw = b.axis ? b.w * 0.2 : b.w + 0.14;
+      const sd = b.axis ? b.d + 0.14 : b.d * 0.2;
+      _m.compose(_v.set(b.x, baseY + b.h * 0.48, b.z), _q, _s.set(sw, b.h * 0.72, sd));
+      strips.current.setMatrixAt(i, _m);
+      strips.current.setColorAt(i, color.set(NEON[(b.tone + 1) % 4]));
+    });
+    for (const ref of [bodies, roofs, strips]) {
+      ref.current.count = BUILDINGS.length;
+      ref.current.instanceMatrix.needsUpdate = true;
+      if (ref.current.instanceColor) ref.current.instanceColor.needsUpdate = true;
+    }
+  }, []);
+
+  return (
+    <group>
+      <instancedMesh ref={bodies} args={[undefined, undefined, BUILDINGS.length]} castShadow receiveShadow>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial roughness={0.55} metalness={0.35} />
+      </instancedMesh>
+      <instancedMesh ref={roofs} args={[undefined, undefined, BUILDINGS.length]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshBasicMaterial toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh ref={strips} args={[undefined, undefined, BUILDINGS.length]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshBasicMaterial toneMapped={false} transparent opacity={0.85} />
+      </instancedMesh>
+    </group>
+  );
+}
+
+function City() {
+  const beacon = useRef();
+  useFrame((state) => {
+    if (beacon.current) beacon.current.rotation.y = state.clock.elapsedTime * 0.7;
+  });
+  return (
+    <group>
+      <CityBlocks />
+      {/* central spire landmark, visible from the mountain pass */}
+      <group position={[CITY.x, CITY.h, CITY.z]}>
+        <mesh position={[0, 16, 0]} castShadow>
+          <cylinderGeometry args={[0.8, 2.4, 32, 6]} />
+          <meshStandardMaterial color="#232c58" emissive="#7a5cff" emissiveIntensity={0.5} roughness={0.4} />
+        </mesh>
+        <group ref={beacon} position={[0, 34, 0]}>
+          <mesh>
+            <octahedronGeometry args={[2.2, 0]} />
+            <meshStandardMaterial color="#ffffff" emissive="#ff5db1" emissiveIntensity={2.8} toneMapped={false} />
+          </mesh>
+        </group>
+        <pointLight position={[0, 26, 0]} intensity={220} distance={130} color="#ff9ad2" />
+        <Html position={[0, 42, 0]} center occlude={false} zIndexRange={[10, 0]}>
+          <div className="portal-sign" style={{ borderColor: '#ff5db1' }}>
+            <div className="portal-title" style={{ color: '#ff5db1' }}>
+              🌆 NEON HEIGHTS
+            </div>
+            <div className="portal-sub">follow the highway east</div>
+          </div>
+        </Html>
+      </group>
+    </group>
   );
 }
 
@@ -280,6 +497,11 @@ export default function HubWorld() {
       <TerrainChunks />
       <Water />
       <Plaza />
+      <Roads />
+      {RAMPS.map((r, i) => (
+        <Ramp key={i} ramp={r} />
+      ))}
+      <City />
     </group>
   );
 }

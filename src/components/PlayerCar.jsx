@@ -2,7 +2,8 @@ import React, { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import CarModel from './CarModel.jsx';
-import { localState, remoteStates, sendBump, sendPortal } from '../net.js';
+import { localState, remoteStates, sendBump, sendPortal, sendTrick } from '../net.js';
+import { burstFX, addShake, shake } from '../fx.js';
 import { useStore } from '../store.js';
 import {
   ARENA_HALF,
@@ -19,12 +20,14 @@ import {
   DEFAULT_CAR,
 } from '../../shared/config.js';
 import {
-  terrainHeight,
-  terrainGradient,
-  terrainNormal,
+  hubHeight,
+  hubGradient,
+  hubNormal,
   decorationsForChunk,
   CHUNK_SIZE,
   WATER_LEVEL,
+  CITY,
+  BUILDINGS,
 } from '../../shared/terrain.js';
 
 // Tuning
@@ -135,6 +138,9 @@ export default function PlayerCar() {
   const portalCooldown = useRef(1.5);
   const hudTimer = useRef(0);
   const epoch = useRef(-1);
+  const crashRef = useRef({ mag: 0, t: 0 }); // CarModel body wobble after hits
+  const flashCooldown = useRef(0); // throttle the HUD impact flash
+  const air = useRef({ active: false, t: 0, x: 0, z: 0 }); // hub jump tracking
 
   // Refs consumed by CarModel for wheel/flame animation
   const speedRef = useRef(0);
@@ -162,14 +168,70 @@ export default function PlayerCar() {
     let fSpeed = 0;
     let boosting = false;
 
+    // Crash feedback: sparks + shockwave at the contact point, camera shake,
+    // body wobble, and (for hard hits) a red screen flash. `power` is the
+    // speed lost along the contact normal.
+    const onImpact = (power, x, y, z, nx, nz, color) => {
+      if (power < 7) return;
+      const k = clamp((power - 7) / 28, 0, 1);
+      addShake(0.22 + k * 0.5);
+      crashRef.current.mag = Math.min(1, 0.35 + k);
+      crashRef.current.t = 0;
+      burstFX(x, y, z, {
+        kind: 'sparks',
+        count: Math.round(10 + k * 24),
+        color: color || '#ffcf6e',
+        nx,
+        nz,
+        speed: 7 + power * 0.6,
+        size: 0.24,
+        ttl: 0.7,
+      });
+      if (power > 14) {
+        burstFX(x, y, z, { kind: 'ring', color: '#ffffff', size: 1.2 + k * 1.6 });
+        if (flashCooldown.current <= 0) {
+          flashCooldown.current = 0.5;
+          st.impact();
+        }
+      }
+    };
+
+    // Big-air bookkeeping: dust + shake on touchdown, records past 1s of air.
+    const onLanding = (airTime, dist, vyImpact) => {
+      const hard = clamp(Math.abs(vyImpact) / 34, 0, 1);
+      burstFX(p.x, p.y + 0.2, p.z, {
+        kind: 'sparks',
+        count: Math.round(8 + airTime * 8),
+        color: '#9aa4c4',
+        speed: 5 + hard * 6,
+        up: 0.5,
+        gravity: 5,
+        drag: 3,
+        grow: 2.6,
+        ttl: 0.8,
+        size: 0.42,
+      });
+      addShake(0.12 + hard * 0.4);
+      if (hard > 0.5) {
+        crashRef.current.mag = Math.min(1, hard);
+        crashRef.current.t = 0;
+      }
+      if (airTime >= 0.8) {
+        useStore.getState().landJump(airTime, dist);
+        sendTrick(airTime, dist);
+      }
+    };
+
     // hard teleport after a room switch (net.js already updated localState)
     if (st.roomEpoch !== epoch.current) {
       epoch.current = st.roomEpoch;
       p.set(localState.p[0], localState.p[1], localState.p[2]);
-      if (st.mode === 'hub') p.y = terrainHeight(p.x, p.z);
+      if (st.mode === 'hub') p.y = hubHeight(p.x, p.z);
       v.set(0, 0, 0);
       vy.current = 0;
       yaw.current = localState.yaw;
+      air.current.active = false;
+      air.current.t = 0;
       portalCooldown.current = 2;
       camera.position.set(p.x - Math.sin(yaw.current) * 12, p.y + 7, p.z - Math.cos(yaw.current) * 12);
     }
@@ -181,7 +243,7 @@ export default function PlayerCar() {
     fwd.current.set(Math.sin(yaw.current), 0, Math.cos(yaw.current));
     fSpeed = v.dot(fwd.current); // signed forward speed
 
-    const groundH = inHub ? terrainHeight(p.x, p.z) : 0;
+    const groundH = inHub ? hubHeight(p.x, p.z) : 0;
     const grounded = p.y <= groundH + 0.25;
     const inWater = inHub && groundH < WATER_LEVEL && p.y < WATER_LEVEL + 0.5;
 
@@ -215,7 +277,7 @@ export default function PlayerCar() {
     v.add(tmp.current);
 
     // --- terrain slope pulls you downhill (hub, grounded only) ---
-    if (inHub) terrainGradient(p.x, p.z, grad.current);
+    if (inHub) hubGradient(p.x, p.z, grad.current);
     if (inHub && grounded) {
       v.x -= grad.current.x * SLOPE_PULL * dt;
       v.z -= grad.current.z * SLOPE_PULL * dt;
@@ -245,10 +307,26 @@ export default function PlayerCar() {
         vy.current = grad.current.x * v.x + grad.current.z * v.z;
       } else {
         vy.current -= GRAVITY * dt;
+        // clock the jump for air-time records
+        if (!air.current.active) {
+          air.current.active = true;
+          air.current.t = 0;
+          air.current.x = p.x;
+          air.current.z = p.z;
+        }
+        air.current.t += dt;
       }
       p.y += vy.current * dt;
-      const h = terrainHeight(p.x, p.z);
+      const h = hubHeight(p.x, p.z);
       if (p.y <= h) {
+        if (air.current.active && air.current.t > 0.45) {
+          onLanding(
+            air.current.t,
+            Math.hypot(p.x - air.current.x, p.z - air.current.z),
+            vy.current
+          );
+        }
+        air.current.active = false;
         p.y = h;
         vy.current = 0;
       }
@@ -278,13 +356,57 @@ export default function PlayerCar() {
           }
         }
       }
+
+      // --- Neon Heights buildings: circle vs AABB, skipped when airborne
+      //     above the roofline ---
+      const dcx = p.x - CITY.x;
+      const dcz = p.z - CITY.z;
+      if (dcx * dcx + dcz * dcz < (CITY.r + 30) ** 2) {
+        for (const b of BUILDINGS) {
+          if (p.y > CITY.h + b.h) continue;
+          const nx0 = clamp(p.x, b.x - b.w / 2, b.x + b.w / 2);
+          const nz0 = clamp(p.z, b.z - b.d / 2, b.z + b.d / 2);
+          let dx = p.x - nx0;
+          let dz = p.z - nz0;
+          let d2 = dx * dx + dz * dz;
+          if (d2 >= CAR_RADIUS * CAR_RADIUS) continue;
+          let nx, nz;
+          if (d2 > 1e-6) {
+            const d = Math.sqrt(d2);
+            nx = dx / d;
+            nz = dz / d;
+            p.x = nx0 + nx * CAR_RADIUS;
+            p.z = nz0 + nz * CAR_RADIUS;
+          } else {
+            // center inside the box: push out along the shallowest axis
+            const px = b.w / 2 - Math.abs(p.x - b.x);
+            const pz = b.d / 2 - Math.abs(p.z - b.z);
+            if (px < pz) {
+              nx = Math.sign(p.x - b.x) || 1;
+              nz = 0;
+              p.x = b.x + nx * (b.w / 2 + CAR_RADIUS);
+            } else {
+              nx = 0;
+              nz = Math.sign(p.z - b.z) || 1;
+              p.z = b.z + nz * (b.d / 2 + CAR_RADIUS);
+            }
+          }
+          const vn = v.x * nx + v.z * nz;
+          if (vn < 0) {
+            onImpact(-vn, p.x - nx * CAR_RADIUS, p.y + 0.6, p.z - nz * CAR_RADIUS, nx, nz, '#8fd0ff');
+            v.x -= nx * vn * 1.6;
+            v.z -= nz * vn * 1.6;
+            v.multiplyScalar(0.82);
+          }
+        }
+      }
     } else {
       // --- arena walls ---
       const lim = ARENA_HALF - 2;
-      if (p.x > lim) { p.x = lim; if (v.x > 0) v.x *= -0.45; }
-      if (p.x < -lim) { p.x = -lim; if (v.x < 0) v.x *= -0.45; }
-      if (p.z > lim) { p.z = lim; if (v.z > 0) v.z *= -0.45; }
-      if (p.z < -lim) { p.z = -lim; if (v.z < 0) v.z *= -0.45; }
+      if (p.x > lim) { p.x = lim; if (v.x > 0) { onImpact(v.x, p.x + 1.2, p.y + 0.6, p.z, -1, 0); v.x *= -0.45; } }
+      if (p.x < -lim) { p.x = -lim; if (v.x < 0) { onImpact(-v.x, p.x - 1.2, p.y + 0.6, p.z, 1, 0); v.x *= -0.45; } }
+      if (p.z > lim) { p.z = lim; if (v.z > 0) { onImpact(v.z, p.x, p.y + 0.6, p.z + 1.2, 0, -1); v.z *= -0.45; } }
+      if (p.z < -lim) { p.z = -lim; if (v.z < 0) { onImpact(-v.z, p.x, p.y + 0.6, p.z - 1.2, 0, 1); v.z *= -0.45; } }
 
       // --- pillars ---
       for (const o of OBSTACLES) {
@@ -299,6 +421,7 @@ export default function PlayerCar() {
           p.z = o.z + nz * min;
           const vn = v.x * nx + v.z * nz;
           if (vn < 0) {
+            onImpact(-vn, p.x - nx * CAR_RADIUS, p.y + 0.6, p.z - nz * CAR_RADIUS, nx, nz);
             v.x -= nx * vn * 1.6;
             v.z -= nz * vn * 1.6;
             v.multiplyScalar(0.85);
@@ -342,6 +465,8 @@ export default function PlayerCar() {
           p.z += nz * (min - d);
           const vn = v.x * nx + v.z * nz;
           if (vn < 0) {
+            // sparks fly in the paint colors at the midpoint between cars
+            onImpact(-vn * 1.4, (p.x + rs.p[0]) / 2, p.y + 0.7, (p.z + rs.p[2]) / 2, nx, nz, '#ffe08a');
             v.x -= nx * vn * 1.4;
             v.z -= nz * vn * 1.4;
           }
@@ -363,9 +488,9 @@ export default function PlayerCar() {
     if (group.current) {
       group.current.position.copy(p);
       qYaw.current.setFromAxisAngle(UP, yaw.current);
-      const groundedNow = !inHub || p.y <= terrainHeight(p.x, p.z) + 0.25;
+      const groundedNow = !inHub || p.y <= hubHeight(p.x, p.z) + 0.25;
       if (inHub && groundedNow) {
-        terrainNormal(p.x, p.z, nrm.current);
+        hubNormal(p.x, p.z, nrm.current);
         nrmV.current.set(nrm.current.x, nrm.current.y, nrm.current.z);
         qTilt.current.setFromUnitVectors(UP, nrmV.current);
         qGoal.current.multiplyQuaternions(qTilt.current, qYaw.current);
@@ -391,12 +516,25 @@ export default function PlayerCar() {
       .addScaledVector(fwd.current, -camDist)
       .add(tmp.current.set(0, 5.6 + Math.abs(fSpeed) * 0.03, 0));
     if (inHub) {
-      const camFloor = terrainHeight(camGoal.current.x, camGoal.current.z) + 2.2;
+      const camFloor = hubHeight(camGoal.current.x, camGoal.current.z) + 2.2;
       if (camGoal.current.y < camFloor) camGoal.current.y = camFloor;
     }
     const smooth = 1 - Math.exp(-5.5 * frameDt);
     camera.position.lerp(camGoal.current, smooth);
-    camera.lookAt(p.x, p.y + 1.6, p.z);
+
+    // --- crash shake: trauma decays, amplitude follows trauma² ---
+    flashCooldown.current -= frameDt;
+    let lookJitter = 0;
+    if (shake.trauma > 0) {
+      shake.trauma = Math.max(0, shake.trauma - 1.9 * frameDt);
+      const s2 = shake.trauma * shake.trauma;
+      const tt = state.clock.elapsedTime;
+      camera.position.x += Math.sin(tt * 91) * s2 * 0.8;
+      camera.position.y += Math.sin(tt * 113 + 2) * s2 * 0.6;
+      camera.position.z += Math.cos(tt * 97 + 4) * s2 * 0.8;
+      lookJitter = Math.sin(tt * 127) * s2 * 0.5;
+    }
+    camera.lookAt(p.x + lookJitter, p.y + 1.6, p.z + lookJitter);
     const targetFov = boosting ? 74 : 62;
     if (Math.abs(camera.fov - targetFov) > 0.1) {
       camera.fov += (targetFov - camera.fov) * Math.min(1, 4 * frameDt);
@@ -433,6 +571,7 @@ export default function PlayerCar() {
         steerRef={steerRef}
         boostRef={boostRef}
         driftRef={driftRef}
+        crashRef={crashRef}
         infected={infected}
       />
       {/* next-gate pointer (race mode only) */}

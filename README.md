@@ -21,6 +21,15 @@ At the center is a neon **portal plaza**: drive into a ring (or press
 live player counts. A green exit ring in every arena (or <kbd>0</kbd>) brings
 you back to the world.
 
+Around the plaza runs a **stunt ring road** lined with neon-railed jump
+ramps — one of them a mega kicker. Big air pays coins, posts your air-time
+and jump-distance **personal bests** (persisted in your browser), and the
+longest air anyone has pulled off becomes the **server-wide air record**,
+announced to every driver in the hub. Follow the **highway east** through a
+canyon pass (jump included) to reach **Neon Heights**, a glowing city
+district with solid buildings, streets, and a beacon spire you can see from
+the mountains.
+
 ## Minigames
 
 Each minigame runs in its own room with its own round loop, and AI bots fill
@@ -45,6 +54,10 @@ the arena whenever you're alone — every game works solo or multiplayer.
 - **Nitro boost** — hold <kbd>Shift</kbd> to burn nitro (FOV kick + exhaust
   flames). Nitro regenerates slowly, or instantly refills on the green
   **boost pads**, which also launch you.
+- **Crunchy crashes** — every hard hit throws a burst of sparks and a
+  shockwave ring at the contact point, shakes the camera (trauma-style,
+  scaled to impact speed), wobbles the car body on its suspension, and
+  flashes the screen edges red on really big ones. Landings kick up dust.
 - **Server-authoritative rules** — coins, steals, infections, crown snatches,
   gate progress, and round wins are all decided server-side.
 - **HUD** — mode banner + round timer, adaptive scoreboard, speedometer,

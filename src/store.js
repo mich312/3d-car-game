@@ -43,6 +43,40 @@ export const useStore = create((set, get) => ({
   carType: startCar,
   roundEarned: 0, // accumulates quietly, toasted at round end
 
+  // --- crash flash + stunt records ---
+  impactNonce: 0, // bumped on hard hits; HUD keys a red flash off it
+  bestAir: Number(localStorage.getItem('nr-best-air')) || 0, // personal, seconds
+  bestJump: Number(localStorage.getItem('nr-best-jump')) || 0, // personal, meters
+  airRecord: null, // { name, air } — server-wide, from the hub
+
+  impact: () => set((s) => ({ impactNonce: s.impactNonce + 1 })),
+
+  landJump: (airTime, dist) => {
+    const s = get();
+    const airR = Math.round(airTime * 10) / 10;
+    const d = Math.round(dist);
+    s.pushFeed(`✈️ ${airR}s air · ${d}m jump!`, 'good');
+    s.earn(Math.min(8, Math.max(1, Math.round(airTime * 2))), 'stunt air');
+    let improved = false;
+    if (airR > s.bestAir) {
+      localStorage.setItem('nr-best-air', String(airR));
+      set({ bestAir: airR });
+      improved = true;
+    }
+    if (d > s.bestJump) {
+      localStorage.setItem('nr-best-jump', String(d));
+      set({ bestJump: d });
+      improved = true;
+    }
+    if (improved) s.pushFeed('🏅 new personal best!', 'gold');
+  },
+
+  setAirRecord: (rec, announce = false) => {
+    if (!rec || !rec.name || !(rec.air > 0)) return;
+    set({ airRecord: { name: rec.name, air: rec.air } });
+    if (announce) get().pushFeed(`🏆 ${rec.name} set the AIR RECORD — ${rec.air}s!`, 'gold');
+  },
+
   earn: (n, why = null) => {
     const wallet = get().wallet + n;
     localStorage.setItem('nr-wallet', String(wallet));

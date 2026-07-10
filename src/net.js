@@ -58,6 +58,10 @@ export function connect(name, color, car) {
       }
       case 'lobby':
         store.setPortalCounts(msg.counts);
+        if (msg.record) store.setAirRecord(msg.record);
+        break;
+      case 'record':
+        store.setAirRecord(msg, true);
         break;
       case 'join':
         remoteStates.set(msg.player.id, {
@@ -154,6 +158,12 @@ export function sendBump(targetId) {
   if ((bumpSent.get(targetId) || 0) > now - 1500) return;
   bumpSent.set(targetId, now);
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'bump', target: targetId }));
+}
+
+export function sendTrick(air, dist) {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ t: 'trick', air: +air.toFixed(2), dist: Math.round(dist) }));
+  }
 }
 
 let portalSent = 0;

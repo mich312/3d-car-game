@@ -95,6 +95,7 @@ const server = http.createServer((req, res) => {
 const players = new Map(); // id -> player (player.room = room id)
 let nextId = 1;
 let coinId = 1;
+let airRecord = { name: null, air: 0 }; // best hub jump this server has seen
 
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -616,6 +617,19 @@ wss.on('connection', (ws) => {
     } else if (msg.t === 'bump') {
       const room = roomOf(me);
       if (room) handleBump(room, me, String(msg.target || ''));
+    } else if (msg.t === 'trick') {
+      // hub stunt: keep the server-wide air-time record, announce new ones
+      const airTime = Number(msg.air);
+      if (
+        me.room === 'hub' &&
+        Number.isFinite(airTime) &&
+        airTime > 0.5 &&
+        airTime < 30 &&
+        airTime > airRecord.air
+      ) {
+        airRecord = { name: me.name, air: Math.round(airTime * 10) / 10 };
+        broadcastRoom(rooms.get('hub'), { t: 'record', name: airRecord.name, air: airRecord.air });
+      }
     } else if (msg.t === 'portal') {
       const to = msg.to === 'hub' ? 'hub' : GAMES.includes(msg.to) ? msg.to : null;
       const now = Date.now();
@@ -676,7 +690,7 @@ setInterval(() => {
   if (hub.players.size === 0) return;
   const counts = {};
   for (const g of GAMES) counts[g] = roomHumans(rooms.get(g)).length;
-  broadcastRoom(hub, { t: 'lobby', counts });
+  broadcastRoom(hub, { t: 'lobby', counts, record: airRecord.name ? airRecord : null });
 }, 2000);
 
 // Sanity: portals defined in shared config must map to real rooms.

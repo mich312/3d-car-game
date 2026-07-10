@@ -9,6 +9,7 @@ import Crown from './Crown.jsx';
 import Gates from './Gates.jsx';
 import PlayerCar from './PlayerCar.jsx';
 import RemoteCars from './RemoteCars.jsx';
+import CrashFX from './CrashFX.jsx';
 import Effects from './Effects.jsx';
 
 export default function Game() {
@@ -76,6 +77,7 @@ export default function Game() {
 
       <PlayerCar />
       <RemoteCars />
+      <CrashFX />
       <Effects />
     </Canvas>
   );

@@ -59,6 +59,14 @@ const smoothstep = (a, b, t) => {
 
 // --- height field ------------------------------------------------------------
 
+// Neon Heights: a flattened city district east of the plaza, reached by a
+// highway carved through the mountains.
+export const CITY = { x: 300, z: 0, r: 100, h: 3.5 };
+// Ring road circling the plaza — the stunt ramps sit on it.
+export const RING_ROAD = { r: 85, w: 9 };
+
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
 export function terrainHeight(x, z) {
   // big mountain masses, exponent sharpens the peaks
   const m = fbm(x * 0.0035, z * 0.0035, 5);
@@ -70,7 +78,21 @@ export function terrainHeight(x, z) {
   // flatten a plaza at the spawn for the portal ring
   const d = Math.hypot(x, z);
   const flat = smoothstep(PLAZA_RADIUS + 10, PLAZA_RADIUS + 90, d);
-  return h * flat + PLAZA_HEIGHT * (1 - flat);
+  h = h * flat + PLAZA_HEIGHT * (1 - flat);
+  // flatten the city district
+  const dc = Math.hypot(x - CITY.x, z - CITY.z);
+  const flatC = smoothstep(CITY.r, CITY.r + 70, dc);
+  h = h * flatC + CITY.h * (1 - flatC);
+  // carve the highway corridor between plaza and city — mountain walls stay
+  // on both sides, so the drive reads as a canyon pass
+  if (x > -10 && x < CITY.x + 40 && Math.abs(z) < 60) {
+    const across = smoothstep(16, 55, Math.abs(z)); // 0 on the road, 1 off it
+    const along = smoothstep(-10, 30, x) * (1 - smoothstep(CITY.x, CITY.x + 40, x));
+    const corridor = 1 - (1 - across) * along;
+    const roadH = PLAZA_HEIGHT + (CITY.h - PLAZA_HEIGHT) * clamp01(x / CITY.x);
+    h = h * corridor + roadH * (1 - corridor);
+  }
+  return h;
 }
 
 // Seamless analytic-ish normal via central differences (used for chunk
@@ -95,6 +117,124 @@ export function terrainGradient(x, z, out = { x: 0, z: 0 }) {
   return out;
 }
 
+// --- stunt ramps --------------------------------------------------------------
+
+// Wedges the physics treats as extra ground: anchored at the low edge center,
+// rising to `h` over length `l` along `yaw` (forward = [sin yaw, cos yaw]),
+// `w` wide. Six ride the ring road; two mega kickers launch off the highway
+// and the plaza's north edge.
+const RING_RAMP_SIZES = [
+  { l: 11, w: 9, h: 4.2 }, // kicker — needs some speed to clock a record
+  { l: 14, w: 10, h: 6 }, // launcher
+];
+const rampDefs = [];
+for (let i = 0; i < 6; i++) {
+  const a = i * (Math.PI / 3) + 0.85; // offset keeps them clear of the highway junction
+  // one of the six is a mega ramp; jumps launch along the ring where the
+  // ground stays low (everything pointing away from the plaza lands uphill)
+  const size = i === 2 ? { l: 26, w: 12, h: 11 } : RING_RAMP_SIZES[i % 2];
+  rampDefs.push({
+    x: Math.sin(a) * RING_ROAD.r,
+    z: Math.cos(a) * RING_ROAD.r,
+    yaw: a + Math.PI / 2, // tangent to the ring — jumps chain as you lap it
+    ...size,
+  });
+}
+rampDefs.push({ x: 150, z: 0, yaw: Math.PI / 2, l: 24, w: 11, h: 9 }); // highway canyon jump
+
+export const RAMPS = rampDefs.map((r) => ({
+  ...r,
+  baseY: terrainHeight(r.x, r.z),
+  sin: Math.sin(r.yaw),
+  cos: Math.cos(r.yaw),
+}));
+
+// Highest ramp under (x, z), or null. `out.h` is the surface height there.
+function rampAt(x, z, out) {
+  let best = null;
+  let bestH = -Infinity;
+  for (const r of RAMPS) {
+    const dx = x - r.x;
+    const dz = z - r.z;
+    const u = dx * r.sin + dz * r.cos; // along the ramp
+    if (u < 0 || u > r.l) continue;
+    const v = dx * r.cos - dz * r.sin; // across
+    if (Math.abs(v) > r.w / 2) continue;
+    const h = r.baseY + (u / r.l) * r.h;
+    if (h > bestH) {
+      bestH = h;
+      best = r;
+    }
+  }
+  if (best) out.h = bestH;
+  return best;
+}
+
+const _ramp = { h: 0 };
+
+// The surface cars actually drive on in the hub: terrain OR a ramp on top.
+export function hubHeight(x, z) {
+  const t = terrainHeight(x, z);
+  const r = rampAt(x, z, _ramp);
+  return r && _ramp.h > t ? _ramp.h : t;
+}
+
+export function hubGradient(x, z, out = { x: 0, z: 0 }) {
+  const t = terrainHeight(x, z);
+  const r = rampAt(x, z, _ramp);
+  if (r && _ramp.h > t) {
+    // analytic slope of the wedge — constant along, zero across
+    out.x = (r.h / r.l) * r.sin;
+    out.z = (r.h / r.l) * r.cos;
+    return out;
+  }
+  return terrainGradient(x, z, out);
+}
+
+const _g = { x: 0, z: 0 };
+
+export function hubNormal(x, z, out = { x: 0, y: 1, z: 0 }) {
+  hubGradient(x, z, _g);
+  const len = Math.hypot(_g.x, 1, _g.z) || 1;
+  out.x = -_g.x / len;
+  out.y = 1 / len;
+  out.z = -_g.z / len;
+  return out;
+}
+
+// --- Neon Heights buildings -----------------------------------------------------
+
+// Deterministic grid of towers with jitter; gaps form a main street (along x)
+// and a cross street. Axis-aligned so car collision is a cheap circle-vs-AABB.
+function makeCity() {
+  const list = [];
+  const grid = 24;
+  const n = Math.ceil(CITY.r / grid);
+  for (let gx = -n; gx <= n; gx++) {
+    for (let gz = -n; gz <= n; gz++) {
+      const bx = CITY.x + gx * grid + (hash2(gx * 3 + 7, gz * 5 + 1) - 0.5) * 7;
+      const bz = CITY.z + gz * grid + (hash2(gx * 11 - 3, gz * 13 + 9) - 0.5) * 7;
+      const dc = Math.hypot(bx - CITY.x, bz - CITY.z);
+      if (dc > CITY.r - 12 || dc < 20) continue; // skyline edge + central plaza
+      if (Math.abs(bz - CITY.z) < 13) continue; // main street
+      if (Math.abs(bx - CITY.x) < 11) continue; // cross street
+      const r1 = hash2(gx * 17 + 5, gz * 19 - 7);
+      const r2 = hash2(gx * 23 - 1, gz * 29 + 3);
+      list.push({
+        x: bx,
+        z: bz,
+        w: 9 + r1 * 6,
+        d: 9 + r2 * 6,
+        h: 10 + r2 * 14 + (1 - dc / CITY.r) * 26 + r1 * 8, // taller downtown
+        tone: Math.floor(r1 * 4) % 4,
+        axis: r2 > 0.5 ? 1 : 0, // which faces get the window strip
+      });
+    }
+  }
+  return list;
+}
+export const BUILDINGS = makeCity();
+
 // --- biome colors -------------------------------------------------------------
 
 const C = {
@@ -105,6 +245,7 @@ const C = {
   rock: [0.4, 0.42, 0.5],
   snow: [0.92, 0.95, 1.0],
   seabed: [0.2, 0.35, 0.42],
+  pavement: [0.16, 0.18, 0.3],
 };
 
 const mix = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
@@ -122,6 +263,11 @@ export function biomeColor(h, slopeY, x, z) {
   // steep faces read as bare rock
   if (slopeY < 0.78 && h > WATER_LEVEL + 1) {
     c = mix(c, C.rock, smoothstep(0.78, 0.6, slopeY));
+  }
+  // the city district floor is paved
+  const dc = Math.hypot(x - CITY.x, z - CITY.z);
+  if (dc < CITY.r + 14) {
+    c = mix(c, C.pavement, (1 - smoothstep(CITY.r - 6, CITY.r + 14, dc)) * (0.75 + jitter * 0.2));
   }
   return c;
 }
@@ -199,7 +345,12 @@ export function decorationsForChunk(cx, cz) {
     const kind = hash2(cx * 89 + i * 29, cz * 83 - i * 23);
     const x = x0 + rx * CHUNK_SIZE;
     const z = z0 + rz * CHUNK_SIZE;
-    if (Math.hypot(x, z) < PLAZA_RADIUS + 30) continue; // keep the plaza clean
+    const d = Math.hypot(x, z);
+    if (d < PLAZA_RADIUS + 30) continue; // keep the plaza clean
+    if (Math.abs(d - RING_ROAD.r) < 10) continue; // ...and the ring road
+    if (Math.hypot(x - CITY.x, z - CITY.z) < CITY.r + 20) continue; // ...and the city
+    if (x > 20 && x < CITY.x && Math.abs(z) < 24) continue; // ...and the highway
+    if (RAMPS.some((r) => (x - r.x) ** 2 + (z - r.z) ** 2 < 26 * 26)) continue;
     const h = terrainHeight(x, z);
     if (h < WATER_LEVEL + 1.5) continue;
     terrainNormal(x, z, nrm);

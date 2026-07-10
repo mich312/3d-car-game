@@ -15,6 +15,7 @@ export default function CarModel({
   steerRef,
   boostRef,
   driftRef,
+  crashRef, // { mag, t } — decaying body wobble after impacts (local car only)
   infected,
   carType = DEFAULT_CAR,
 }) {
@@ -46,10 +47,21 @@ export default function CarModel({
       if (g) g.rotation.y += (steer * 0.45 - g.rotation.y) * Math.min(1, 12 * dt);
     }
     if (body.current) {
+      // crash wobble: a decaying oscillation layered on the usual lean
+      let wobRoll = 0;
+      let wobPitch = 0;
+      const cr = crashRef?.current;
+      if (cr && cr.mag > 0) {
+        cr.t += dt;
+        const env = cr.mag * Math.exp(-5 * cr.t);
+        if (env < 0.01) cr.mag = 0;
+        wobRoll = Math.sin(cr.t * 34) * env * 0.35;
+        wobPitch = Math.cos(cr.t * 27) * env * 0.2;
+      }
       // lean into corners, squat a little under boost
-      const targetRoll = -steer * Math.min(Math.abs(speed) / 30, 1) * 0.12 - drift * 0.05;
+      const targetRoll = -steer * Math.min(Math.abs(speed) / 30, 1) * 0.12 - drift * 0.05 + wobRoll;
       body.current.rotation.z += (targetRoll - body.current.rotation.z) * Math.min(1, 8 * dt);
-      const targetPitch = boosting ? 0.03 : 0;
+      const targetPitch = (boosting ? 0.03 : 0) + wobPitch;
       body.current.rotation.x += (targetPitch - body.current.rotation.x) * Math.min(1, 6 * dt);
     }
     if (sickRing.current) {

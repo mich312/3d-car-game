@@ -70,11 +70,14 @@ export const GAMES = ['coins', 'tag', 'crown', 'race'];
 
 // Portal ring around the hub spawn plaza. Drive through one to join that
 // minigame's room; a green exit ring inside each arena brings you back.
+// Portals sit on the diagonals so the compass axes stay clear — the highway
+// to Neon Heights runs east and the mega kicker launches north.
+const PR = 44 / Math.SQRT2;
 export const HUB_PORTALS = [
-  { game: 'coins', x: 0, z: 44, color: '#ffd23f', icon: '🪙' },
-  { game: 'tag', x: 44, z: 0, color: '#39ff6a', icon: '🧟' },
-  { game: 'crown', x: 0, z: -44, color: '#ff5db1', icon: '👑' },
-  { game: 'race', x: -44, z: 0, color: '#3fd7ff', icon: '🏁' },
+  { game: 'coins', x: PR, z: PR, color: '#ffd23f', icon: '🪙' },
+  { game: 'tag', x: PR, z: -PR, color: '#39ff6a', icon: '🧟' },
+  { game: 'crown', x: -PR, z: -PR, color: '#ff5db1', icon: '👑' },
+  { game: 'race', x: -PR, z: PR, color: '#3fd7ff', icon: '🏁' },
 ];
 export const PORTAL_RADIUS = 5;
 export const ARENA_EXIT = { x: 0, z: -82 }; // in-arena ring back to the hub

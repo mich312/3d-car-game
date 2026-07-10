@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import CarModel from './CarModel.jsx';
 import { remoteStates } from '../net.js';
 import { useStore } from '../store.js';
-import { terrainNormal } from '../../shared/terrain.js';
+import { hubNormal } from '../../shared/terrain.js';
 
 const TWO_PI = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -48,7 +48,7 @@ function RemoteCar({ info }) {
     // pose: yaw + terrain tilt in the hub (same shared height field)
     qYaw.current.setFromAxisAngle(UP, newYaw);
     if (useStore.getState().mode === 'hub') {
-      terrainNormal(g.position.x, g.position.z, nrm.current);
+      hubNormal(g.position.x, g.position.z, nrm.current);
       nrmV.current.set(nrm.current.x, nrm.current.y, nrm.current.z);
       qTilt.current.setFromUnitVectors(UP, nrmV.current);
       qGoal.current.multiplyQuaternions(qTilt.current, qYaw.current);
