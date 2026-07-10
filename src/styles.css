@@ -666,3 +666,103 @@ kbd {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   transform: translateY(-4px);
 }
+
+/* ---------- touch controls (mobile) ---------- */
+
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  touch-action: none;
+}
+
+.tc-stick {
+  position: absolute;
+  left: max(26px, env(safe-area-inset-left));
+  bottom: 92px;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, rgba(63, 215, 255, 0.12), rgba(10, 14, 34, 0.55));
+  border: 1.5px solid rgba(63, 215, 255, 0.35);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.tc-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #7fe6ff, #2b8fd6);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 16px rgba(63, 215, 255, 0.55);
+  will-change: transform;
+}
+
+.tc-actions {
+  position: absolute;
+  right: max(26px, env(safe-area-inset-right));
+  bottom: 92px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.tc-btn {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 1px;
+  color: #ffffff;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  backdrop-filter: blur(4px);
+  transition: transform 0.06s ease, filter 0.06s ease;
+}
+
+.tc-boost {
+  background: radial-gradient(circle at 50% 40%, rgba(63, 215, 255, 0.4), rgba(10, 14, 34, 0.6));
+  border: 2px solid rgba(63, 215, 255, 0.7);
+  box-shadow: 0 0 18px rgba(63, 215, 255, 0.4);
+}
+
+.tc-drift {
+  width: 78px;
+  height: 78px;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 93, 177, 0.38), rgba(10, 14, 34, 0.6));
+  border: 2px solid rgba(255, 93, 177, 0.7);
+  box-shadow: 0 0 18px rgba(255, 93, 177, 0.35);
+}
+
+.tc-btn.tc-active {
+  transform: scale(0.9);
+  filter: brightness(1.5);
+}
+
+/* On touch devices, free the bottom corners for the thumbs: hide the keyboard
+   hint and move the minimap up to the top-right under the wallet. */
+@media (pointer: coarse) {
+  .hint {
+    display: none;
+  }
+  .minimap {
+    top: 58px;
+    right: 12px;
+    bottom: auto;
+    width: 104px;
+    height: 104px;
+  }
+}

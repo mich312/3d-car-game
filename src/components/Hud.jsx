@@ -3,6 +3,7 @@ import { useStore } from '../store.js';
 import { localState, remoteStates } from '../net.js';
 import { ARENA_HALF, OBSTACLES, MODES, RACE_GATES, HUB_PORTALS } from '../../shared/config.js';
 import { RAMPS, RING_ROAD, CITY, GROTTO } from '../../shared/terrain.js';
+import TouchControls from './TouchControls.jsx';
 
 function Minimap() {
   const canvasRef = useRef(null);
@@ -295,6 +296,8 @@ export default function Hud() {
       </div>
 
       <Minimap />
+
+      <TouchControls />
 
       <div className="hint">
         {mode === 'hub'

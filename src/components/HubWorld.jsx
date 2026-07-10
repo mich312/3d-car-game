@@ -135,22 +135,68 @@ function TerrainChunks() {
 // Water — a big plane that follows the player at sea level
 // ---------------------------------------------------------------------------
 
+// A PBR water material whose surface normal is rippled procedurally in the
+// fragment shader (a sum of moving sine waves in world space). Because it stays
+// a standard material, it keeps reflecting the real day/night sky cubemap and
+// catching the sun's specular — the ripples just make those reflections dance,
+// and the sun paints a moving glitter path across the water. No extra geometry,
+// so the huge plane stays cheap.
+function useWaterMaterial() {
+  return useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#12539f',
+      transparent: true,
+      opacity: 0.86,
+      roughness: 0.08,
+      metalness: 0.0,
+      envMapIntensity: 1.6,
+    });
+    mat.userData.uTime = { value: 0 };
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = mat.userData.uTime;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vWorldXZ;')
+        .replace(
+          '#include <begin_vertex>',
+          '#include <begin_vertex>\nvWorldXZ = (modelMatrix * vec4(position, 1.0)).xz;'
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          '#include <common>\nuniform float uTime;\nvarying vec2 vWorldXZ;'
+        )
+        .replace(
+          '#include <normal_fragment_begin>',
+          `#include <normal_fragment_begin>
+          {
+            vec2 w = vWorldXZ;
+            float t = uTime;
+            float sx = cos(w.x * 0.14 + t * 1.3) * 0.14
+                     + cos(w.x * 0.37 - t * 1.7 + w.y * 0.1) * 0.06
+                     + cos(w.x * 0.9 + t * 2.6 + w.y * 0.3) * 0.02;
+            float sz = cos(w.y * 0.12 - t * 1.1) * 0.14
+                     + cos(w.y * 0.41 + t * 1.9 + w.x * 0.1) * 0.06
+                     + cos(w.y * 0.95 - t * 2.4 + w.x * 0.3) * 0.02;
+            vec3 nw = normalize(vec3(-sx, 1.0, -sz));
+            normal = normalize((viewMatrix * vec4(nw, 0.0)).xyz);
+          }`
+        );
+    };
+    return mat;
+  }, []);
+}
+
 function Water() {
   const ref = useRef();
+  const material = useWaterMaterial();
   useFrame((state) => {
+    material.userData.uTime.value = state.clock.elapsedTime;
     if (!ref.current) return;
     ref.current.position.set(localState.p[0], WATER_LEVEL + Math.sin(state.clock.elapsedTime * 0.6) * 0.12, localState.p[2]);
   });
   return (
-    <mesh ref={ref} rotation-x={-Math.PI / 2}>
+    <mesh ref={ref} rotation-x={-Math.PI / 2} material={material}>
       <planeGeometry args={[CHUNK_SIZE * (VIEW_CHUNKS * 2 + 2), CHUNK_SIZE * (VIEW_CHUNKS * 2 + 2)]} />
-      <meshStandardMaterial
-        color="#1565d8"
-        transparent
-        opacity={0.72}
-        roughness={0.15}
-        metalness={0.55}
-      />
     </mesh>
   );
 }
