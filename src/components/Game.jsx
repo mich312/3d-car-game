@@ -1,6 +1,6 @@
 import React from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Sky, Stars } from '@react-three/drei';
+import { Sky, Stars, Environment, Lightformer } from '@react-three/drei';
 import { useStore } from '../store.js';
 import Arena from './Arena.jsx';
 import HubWorld from './HubWorld.jsx';
@@ -35,8 +35,19 @@ export default function Game() {
       />
       <Stars radius={320} depth={60} count={2500} factor={5} fade speed={0.5} />
 
-      <ambientLight intensity={0.75} color="#8fa8ff" />
-      <hemisphereLight args={['#7f9bea', '#2a2148', 0.9]} />
+      <ambientLight intensity={0.55} color="#8fa8ff" />
+      <hemisphereLight args={['#7f9bea', '#2a2148', 0.7]} />
+
+      {/* Static procedural environment map: rendered ONCE (frames={1}) into a
+          256px cubemap — free at runtime, no downloads. Gives car paint,
+          glass, and water something to reflect. */}
+      <Environment frames={1} resolution={256} background={false}>
+        <color attach="background" args={['#0d1430']} />
+        <Lightformer form="rect" intensity={3} color="#8fb8ff" scale={[40, 6, 1]} position={[0, 4, -20]} />
+        <Lightformer form="rect" intensity={1.6} color="#ff9ac4" scale={[40, 5, 1]} position={[0, 3, 20]} rotation-y={Math.PI} />
+        <Lightformer form="rect" intensity={8} color="#ffe9c0" scale={[8, 8, 1]} position={[18, 14, -12]} target={[0, 0, 0]} />
+        <Lightformer form="ring" intensity={2} color="#bcd6ff" scale={12} position={[0, 18, 0]} target={[0, 0, 0]} />
+      </Environment>
 
       {inHub ? (
         <HubWorld />

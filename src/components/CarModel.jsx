@@ -1,6 +1,6 @@
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { Html, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import { CAR_TYPES, DEFAULT_CAR } from '../../shared/config.js';
 
@@ -26,6 +26,7 @@ export default function CarModel({
   const wheelSteer = useRef([]);
 
   const bodyColor = useMemo(() => new THREE.Color(color), [color]);
+  const glowColor = useMemo(() => new THREE.Color(color).multiplyScalar(2.2), [color]);
   const sh = (CAR_TYPES[carType] || CAR_TYPES[DEFAULT_CAR]).shape;
   const [bw, bh, bl] = sh.body;
   const wheelR = sh.wheelR;
@@ -74,21 +75,32 @@ export default function CarModel({
   return (
     <group>
       <group ref={body}>
-        {/* chassis */}
-        <mesh position={[0, bodyY, 0]} castShadow>
-          <boxGeometry args={[bw, bh, bl]} />
-          <meshStandardMaterial color={bodyColor} roughness={0.35} metalness={0.35} />
-        </mesh>
+        {/* chassis: rounded edges + clearcoat showroom paint */}
+        <RoundedBox args={[bw, bh, bl]} radius={Math.min(0.14, bh * 0.24)} smoothness={2} position={[0, bodyY, 0]} castShadow>
+          <meshPhysicalMaterial
+            color={bodyColor}
+            metalness={0.65}
+            roughness={0.28}
+            clearcoat={1}
+            clearcoatRoughness={0.12}
+            envMapIntensity={1.1}
+          />
+        </RoundedBox>
         {/* nose wedge */}
-        <mesh position={[0, bodyY - 0.08, nose - 0.15]} castShadow>
-          <boxGeometry args={[bw * 0.86, bh * 0.6, 0.7]} />
-          <meshStandardMaterial color={bodyColor} roughness={0.35} metalness={0.35} />
-        </mesh>
-        {/* cabin */}
-        <mesh position={[0, cabinY, -0.25]} castShadow>
-          <boxGeometry args={[sh.cabinW, 0.5, bl * 0.45]} />
-          <meshStandardMaterial color="#101426" roughness={0.15} metalness={0.7} />
-        </mesh>
+        <RoundedBox args={[bw * 0.86, bh * 0.6, 0.7]} radius={0.08} smoothness={2} position={[0, bodyY - 0.08, nose - 0.15]} castShadow>
+          <meshPhysicalMaterial
+            color={bodyColor}
+            metalness={0.65}
+            roughness={0.28}
+            clearcoat={1}
+            clearcoatRoughness={0.12}
+            envMapIntensity={1.1}
+          />
+        </RoundedBox>
+        {/* cabin: dark reflective glass */}
+        <RoundedBox args={[sh.cabinW, 0.5, bl * 0.45]} radius={0.12} smoothness={2} position={[0, cabinY, -0.25]} castShadow>
+          <meshPhysicalMaterial color="#0b1020" metalness={1} roughness={0.07} envMapIntensity={1.5} />
+        </RoundedBox>
         {/* muscle hood scoop */}
         {sh.scoop && (
           <mesh position={[0, bodyY + bh / 2 + 0.14, nose - 1.1]} castShadow>
@@ -164,12 +176,31 @@ export default function CarModel({
             if (w.front) wheelSteer.current[i] = el;
           }}
         >
-          <mesh ref={(el) => (wheelSpin.current[i] = el)} rotation-z={Math.PI / 2} castShadow>
-            <cylinderGeometry args={[wheelR, wheelR, 0.32 + wheelR * 0.25, 14]} />
-            <meshStandardMaterial color="#15161c" roughness={0.9} />
-          </mesh>
+          <group ref={(el) => (wheelSpin.current[i] = el)}>
+            <mesh rotation-z={Math.PI / 2} castShadow>
+              <cylinderGeometry args={[wheelR, wheelR, 0.32 + wheelR * 0.25, 14]} />
+              <meshStandardMaterial color="#15161c" roughness={0.9} />
+            </mesh>
+            {/* chrome hubcap */}
+            <mesh rotation-z={Math.PI / 2}>
+              <cylinderGeometry args={[wheelR * 0.5, wheelR * 0.5, 0.34 + wheelR * 0.25, 8]} />
+              <meshStandardMaterial color="#c9d4e8" metalness={1} roughness={0.22} envMapIntensity={1.3} />
+            </mesh>
+          </group>
         </group>
       ))}
+
+      {/* neon underglow in the paint color (HDR color feeds the bloom pass) */}
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.09, 0]}>
+        <planeGeometry args={[bw + 0.25, bl - 0.4]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={0.55}
+          toneMapped={false}
+          depthWrite={false}
+        />
+      </mesh>
 
       {/* infection aura (tag mode) */}
       {infected && (
