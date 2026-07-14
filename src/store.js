@@ -19,6 +19,12 @@ const owned = savedOwned.length ? savedOwned : [DEFAULT_CAR];
 const savedCar = localStorage.getItem('nr-cartype');
 const startCar = owned.includes(savedCar) ? savedCar : DEFAULT_CAR;
 
+// Graphics quality tier for the "fake ray tracing" stack (tone mapping,
+// ambient occlusion, soft shadows, reflections). Persists per browser.
+export const GFX_TIERS = ['low', 'med', 'high'];
+const savedGfx = localStorage.getItem('nr-gfx');
+const startGfx = GFX_TIERS.includes(savedGfx) ? savedGfx : 'high';
+
 export const useStore = create((set, get) => ({
   phase: 'lobby', // 'lobby' | 'playing' | 'disconnected'
   myId: null,
@@ -43,6 +49,15 @@ export const useStore = create((set, get) => ({
   ownedCars: owned,
   carType: startCar,
   roundEarned: 0, // accumulates quietly, toasted at round end
+
+  // --- graphics quality (persists in localStorage) ---
+  gfx: startGfx, // 'low' | 'med' | 'high'
+  cycleGfx: () => {
+    const s = get();
+    const next = GFX_TIERS[(GFX_TIERS.indexOf(s.gfx) + 1) % GFX_TIERS.length];
+    localStorage.setItem('nr-gfx', next);
+    set({ gfx: next });
+  },
 
   // --- crash flash + stunt records ---
   impactNonce: 0, // bumped on hard hits; HUD keys a red flash off it

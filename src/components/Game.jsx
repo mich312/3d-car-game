@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Stars } from '@react-three/drei';
+import { Stars, SoftShadows } from '@react-three/drei';
+import * as THREE from 'three';
 import { useStore } from '../store.js';
 import { dayTime, sampleSky, createSkySample } from '../dayNight.js';
 import SkyCubemap from './SkyCubemap.jsx';
@@ -54,15 +55,36 @@ function NightStars() {
   return <Stars ref={stars} radius={210} depth={50} count={4000} factor={11} fade speed={0.4} />;
 }
 
+// Per-tier graphics settings. AgX tone mapping (filmic highlight roll-off) is
+// always on — it's what stops the bright daytime sky clipping to flat white;
+// exposure is pulled well under 1 so midday sits in range. Pixel ratio and
+// PCSS soft shadows scale with the tier (the sun's shadow-map resolution
+// scales too, over in DayNightLights). The Canvas is remounted when the tier
+// changes (keyed on `gfx`) so shadow config and any patched shader chunks
+// rebuild cleanly rather than being toggled live.
+const GFX = {
+  low: { exposure: 0.78, dprMax: 1.0, soft: false },
+  med: { exposure: 0.74, dprMax: 1.5, soft: false },
+  high: { exposure: 0.72, dprMax: 1.5, soft: true },
+};
+
 export default function Game() {
   const inHub = useStore((s) => s.mode === 'hub');
+  const gfx = useStore((s) => s.gfx);
+  const cfg = GFX[gfx] || GFX.high;
 
   return (
     <Canvas
+      key={gfx}
       shadows
-      dpr={[1, 1.5]}
+      dpr={[1, cfg.dprMax]}
       camera={{ fov: 62, near: 0.5, far: 1200, position: [0, 40, -60] }}
+      gl={{ toneMapping: THREE.AgXToneMapping, toneMappingExposure: cfg.exposure }}
     >
+      {/* PCSS soft shadows on the top tier: penumbras widen with distance from
+          the caster, the way real (ray-traced) contact shadows do. */}
+      {cfg.soft && <SoftShadows size={26} samples={16} focus={0.9} />}
+
       <DayNightFog near={inHub ? 160 : 140} far={inHub ? 560 : 480} />
 
       {/* A real cubemap that tracks the day/night cycle: the physical-sky

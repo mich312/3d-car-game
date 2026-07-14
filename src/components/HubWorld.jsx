@@ -293,7 +293,8 @@ function Road({ points, width = 8 }) {
   return (
     <group>
       <mesh geometry={asphalt} receiveShadow>
-        <meshStandardMaterial color="#1a2140" roughness={0.85} metalness={0.05} />
+        {/* wet-asphalt sheen: glossy enough to mirror the sky at grazing angles */}
+        <meshStandardMaterial color="#141a34" roughness={0.45} metalness={0.0} envMapIntensity={1.1} />
       </mesh>
       <mesh geometry={line}>
         <meshBasicMaterial color="#3fd7ff" toneMapped={false} transparent opacity={0.75} />
@@ -712,7 +713,7 @@ function Plaza() {
       {/* plaza disc sits just above the flattened terrain */}
       <mesh rotation-x={-Math.PI / 2} position={[0, PLAZA_HEIGHT + 0.05, 0]} receiveShadow>
         <circleGeometry args={[PLAZA_RADIUS, 48]} />
-        <meshStandardMaterial color="#4b5794" roughness={0.55} metalness={0.25} />
+        <meshStandardMaterial color="#3a4680" roughness={0.5} metalness={0.0} envMapIntensity={0.95} />
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position={[0, PLAZA_HEIGHT + 0.08, 0]}>
         <ringGeometry args={[PLAZA_RADIUS - 1.2, PLAZA_RADIUS, 64]} />

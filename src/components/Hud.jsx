@@ -166,6 +166,22 @@ const SCOREBOARD_TITLES = {
 
 const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
+const GFX_LABEL = { low: 'GFX: LOW', med: 'GFX: MED', high: 'GFX: HIGH' };
+
+function GfxToggle() {
+  const gfx = useStore((s) => s.gfx);
+  const cycleGfx = useStore((s) => s.cycleGfx);
+  return (
+    <button
+      className="gfx-toggle"
+      onClick={cycleGfx}
+      title="Graphics quality — ambient occlusion, soft shadows, reflections"
+    >
+      {GFX_LABEL[gfx] || 'GFX'}
+    </button>
+  );
+}
+
 export default function Hud() {
   const players = useStore((s) => s.players);
   const scores = useStore((s) => s.scores);
@@ -213,6 +229,9 @@ export default function Hud() {
 
       {/* wallet */}
       <div className="wallet-pill">🪙 {wallet}</div>
+
+      {/* graphics quality toggle */}
+      <GfxToggle />
 
       {/* scoreboard */}
       <div className="scoreboard">

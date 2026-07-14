@@ -2,7 +2,10 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { localState } from '../net.js';
+import { useStore } from '../store.js';
 import { dayTime, sampleSky, createSkySample } from '../dayNight.js';
+
+const SHADOW_MAP = { low: 1024, med: 2048, high: 2048 };
 
 /**
  * The single sun for the whole game. It follows the player (so shadows exist
@@ -17,6 +20,7 @@ export default function DayNightLights() {
   const hemi = useRef();
   const sample = useMemo(createSkySample, []);
   const target = useMemo(() => new THREE.Object3D(), []);
+  const shadowSize = SHADOW_MAP[useStore((s) => s.gfx)] || 2048;
 
   useFrame((state) => {
     sampleSky(dayTime(state.clock.elapsedTime), sample);
@@ -54,7 +58,7 @@ export default function DayNightLights() {
       <directionalLight
         ref={sun}
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[shadowSize, shadowSize]}
         shadow-camera-left={-140}
         shadow-camera-right={140}
         shadow-camera-top={140}

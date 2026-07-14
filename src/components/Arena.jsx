@@ -58,7 +58,9 @@ export default function Arena() {
       {/* Ground */}
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
         <planeGeometry args={[size + 40, size + 40]} />
-        <meshStandardMaterial color="#1d2547" roughness={0.9} metalness={0.1} />
+        {/* glossy dielectric floor: keeps its blue but catches the sky as a
+            grazing-angle (Fresnel) reflection — a wet-arena look */}
+        <meshStandardMaterial color="#161d3c" roughness={0.5} metalness={0.0} envMapIntensity={1.0} />
       </mesh>
       <Grid
         position={[0, 0.03, 0]}

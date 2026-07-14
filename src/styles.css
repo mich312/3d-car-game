@@ -625,6 +625,30 @@ kbd {
   backdrop-filter: blur(6px);
 }
 
+.gfx-toggle {
+  position: absolute;
+  top: 54px;
+  right: 16px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #9fe6ff;
+  background: rgba(10, 14, 34, 0.72);
+  border: 1px solid rgba(63, 215, 255, 0.35);
+  border-radius: 24px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  pointer-events: auto;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.gfx-toggle:hover {
+  color: #ffffff;
+  border-color: rgba(63, 215, 255, 0.7);
+}
+
 /* ---------- portal signs (drei Html) ---------- */
 
 .portal-sign {
