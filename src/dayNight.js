@@ -78,13 +78,13 @@ export function sampleSky(dayT, out) {
   out.golden = golden;
 
   out.sunColor.lerpColors(C.sunHorizon, C.sunNoon, high);
-  out.sunIntensity = day * (1.25 + 1.05 * high);
+  out.sunIntensity = day * (0.95 + 0.8 * high);
 
   out.ambColor.lerpColors(C.ambNight, C.ambDay, day);
-  out.ambIntensity = 0.09 + 0.4 * day;
+  out.ambIntensity = 0.09 + 0.29 * day;
 
   out.hemiSky.lerpColors(C.hemiSkyNight, C.hemiSkyDay, day).lerp(C.hemiGolden, golden * 0.6);
-  out.hemiIntensity = 0.16 + 0.46 * day;
+  out.hemiIntensity = 0.16 + 0.34 * day;
 
   out.fogColor.lerpColors(C.fogNight, C.fogDay, day).lerp(C.fogGolden, golden * 0.6);
 
