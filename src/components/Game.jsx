@@ -1,7 +1,11 @@
-import React from 'react';
-import { Canvas } from '@react-three/fiber';
-import { Sky, Stars, Environment, Lightformer } from '@react-three/drei';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Stars } from '@react-three/drei';
 import { useStore } from '../store.js';
+import { dayTime, sampleSky, createSkySample } from '../dayNight.js';
+import SkyCubemap from './SkyCubemap.jsx';
+import DayNightLights from './DayNightLights.jsx';
+import SkyClouds from './SkyClouds.jsx';
 import Arena from './Arena.jsx';
 import HubWorld from './HubWorld.jsx';
 import Coins from './Coins.jsx';
@@ -12,6 +16,44 @@ import RemoteCars from './RemoteCars.jsx';
 import CrashFX from './CrashFX.jsx';
 import Effects from './Effects.jsx';
 
+// Fog whose colour rides the cycle: deep navy at night, soft blue by day, warm
+// at dawn/dusk. Distances stay per-mode.
+function DayNightFog({ near, far }) {
+  const fog = useRef();
+  const sample = useMemo(createSkySample, []);
+  useFrame((state) => {
+    sampleSky(dayTime(state.clock.elapsedTime), sample);
+    if (fog.current) fog.current.color.copy(sample.fogColor);
+  });
+  return <fog ref={fog} attach="fog" args={['#0c1230', near, far]} />;
+}
+
+// drei Stars, faded in and out with the night via a patched-in opacity uniform
+// (its additive shader has no opacity of its own).
+function NightStars() {
+  const stars = useRef();
+  const sample = useMemo(createSkySample, []);
+  const uOpacity = useRef({ value: 0 });
+  useEffect(() => {
+    const pts = stars.current;
+    if (!pts) return;
+    const mat = pts.material;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uOpacity = uOpacity.current;
+      shader.fragmentShader = shader.fragmentShader
+        .replace('uniform float fade;', 'uniform float fade;\nuniform float uOpacity;')
+        .replace('gl_FragColor = vec4(vColor, opacity);', 'gl_FragColor = vec4(vColor, opacity * uOpacity);');
+    };
+    mat.needsUpdate = true;
+  }, []);
+  useFrame((state) => {
+    sampleSky(dayTime(state.clock.elapsedTime), sample);
+    uOpacity.current.value = sample.starOpacity;
+    if (stars.current) stars.current.visible = sample.starOpacity > 0.01;
+  });
+  return <Stars ref={stars} radius={210} depth={50} count={4000} factor={11} fade speed={0.4} />;
+}
+
 export default function Game() {
   const inHub = useStore((s) => s.mode === 'hub');
 
@@ -21,53 +63,24 @@ export default function Game() {
       dpr={[1, 1.5]}
       camera={{ fov: 62, near: 0.5, far: 1200, position: [0, 40, -60] }}
     >
-      <color attach="background" args={['#0a0f24']} />
-      {inHub ? (
-        <fog attach="fog" args={['#26355f', 160, 560]} />
-      ) : (
-        <fog attach="fog" args={['#131a38', 140, 480]} />
-      )}
-      <Sky
-        distance={450000}
-        sunPosition={inHub ? [120, 45, -80] : [80, 12, -120]}
-        turbidity={inHub ? 6 : 8}
-        rayleigh={inHub ? 1.6 : 2.5}
-        mieCoefficient={0.015}
-      />
-      <Stars radius={320} depth={60} count={2500} factor={5} fade speed={0.5} />
+      <DayNightFog near={inHub ? 160 : 140} far={inHub ? 560 : 480} />
 
-      <ambientLight intensity={0.55} color="#8fa8ff" />
-      <hemisphereLight args={['#7f9bea', '#2a2148', 0.7]} />
+      {/* A real cubemap that tracks the day/night cycle: the physical-sky
+          shader baked into a CubeCamera render target and re-baked as the sun
+          moves, used as both the skybox background and the PMREM reflection
+          environment. Car paint, glass, and water reflect the sky overhead. */}
+      <SkyCubemap />
+      <NightStars />
+      <SkyClouds />
 
-      {/* Static procedural environment map: rendered ONCE (frames={1}) into a
-          256px cubemap — free at runtime, no downloads. Gives car paint,
-          glass, and water something to reflect. */}
-      <Environment frames={1} resolution={256} background={false}>
-        <color attach="background" args={['#0d1430']} />
-        <Lightformer form="rect" intensity={3} color="#8fb8ff" scale={[40, 6, 1]} position={[0, 4, -20]} />
-        <Lightformer form="rect" intensity={1.6} color="#ff9ac4" scale={[40, 5, 1]} position={[0, 3, 20]} rotation-y={Math.PI} />
-        <Lightformer form="rect" intensity={8} color="#ffe9c0" scale={[8, 8, 1]} position={[18, 14, -12]} target={[0, 0, 0]} />
-        <Lightformer form="ring" intensity={2} color="#bcd6ff" scale={12} position={[0, 18, 0]} target={[0, 0, 0]} />
-      </Environment>
+      {/* One sun for the whole game, following the player and riding the cycle
+          (colour, intensity, elevation), plus ambient + hemisphere. */}
+      <DayNightLights />
 
       {inHub ? (
         <HubWorld />
       ) : (
         <>
-          {/* arena rooms bring their own static sun */}
-          <directionalLight
-            castShadow
-            position={[70, 90, -50]}
-            intensity={1.6}
-            color="#ffe2b0"
-            shadow-mapSize={[2048, 2048]}
-            shadow-camera-left={-120}
-            shadow-camera-right={120}
-            shadow-camera-top={120}
-            shadow-camera-bottom={-120}
-            shadow-camera-far={320}
-            shadow-bias={-0.0004}
-          />
           <Arena />
           <Coins />
           <Crown />

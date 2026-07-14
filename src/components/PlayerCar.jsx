@@ -2,6 +2,8 @@ import React, { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import CarModel from './CarModel.jsx';
+import { input, installKeyboard } from '../input.js';
+import { dayTime, sampleSky, createSkySample } from '../dayNight.js';
 import { localState, remoteStates, sendBump, sendPortal, sendTrick } from '../net.js';
 import { burstFX, addShake, shake } from '../fx.js';
 import { playCrash, playThud, playCoin, playKnock, setBoost } from '../sound.js';
@@ -18,7 +20,6 @@ import {
   HUB_PORTALS,
   PORTAL_RADIUS,
   ARENA_EXIT,
-  GAMES,
   CAR_TYPES,
   DEFAULT_CAR,
 } from '../../shared/config.js';
@@ -81,50 +82,12 @@ function chargeCrystals(px, pz, onCharge) {
   }
 }
 
-function useKeys() {
-  const keys = useRef({ up: false, down: false, left: false, right: false, boost: false, drift: false });
-  useEffect(() => {
-    const map = {
-      KeyW: 'up',
-      ArrowUp: 'up',
-      KeyS: 'down',
-      ArrowDown: 'down',
-      KeyA: 'left',
-      ArrowLeft: 'left',
-      KeyD: 'right',
-      ArrowRight: 'right',
-      ShiftLeft: 'boost',
-      ShiftRight: 'boost',
-      Space: 'drift',
-    };
-    // quick travel: 1-4 jump into a minigame, 0 returns to the hub
-    const travel = { Digit1: GAMES[0], Digit2: GAMES[1], Digit3: GAMES[2], Digit4: GAMES[3], Digit0: 'hub' };
-    const down = (e) => {
-      const k = map[e.code];
-      if (k) {
-        keys.current[k] = true;
-        if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
-      }
-      if (travel[e.code]) sendPortal(travel[e.code]);
-    };
-    const up = (e) => {
-      const k = map[e.code];
-      if (k) keys.current[k] = false;
-    };
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    return () => {
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-    };
-  }, []);
-  return keys;
-}
-
 export default function PlayerCar() {
   const group = useRef();
-  const keys = useKeys();
+  const headlights = useRef();
+  useEffect(() => installKeyboard(), []);
   const { camera } = useThree();
+  const nightSample = useRef(createSkySample());
 
   const myId = useStore((s) => s.myId);
   const color = useStore((s) => (s.myId ? s.players[s.myId]?.color : '#ff4757')) || '#ff4757';
@@ -170,7 +133,6 @@ export default function PlayerCar() {
   useFrame((state, rawDt) => {
     const st = useStore.getState();
     const inHub = st.mode === 'hub';
-    const k = keys.current;
     const p = pos.current;
     const v = vel.current;
     let fSpeed = 0;
@@ -263,15 +225,15 @@ export default function PlayerCar() {
     const inWater = inHub && groundH < WATER_LEVEL && p.y < WATER_LEVEL + 0.5;
 
     // --- boost ---
-    boosting = k.boost && nitro.current > 0 && fSpeed > 2 && !inWater;
+    boosting = input.boost && nitro.current > 0 && fSpeed > 2 && !inWater;
     if (boosting) nitro.current = Math.max(0, nitro.current - (NITRO_DRAIN / stats.nitro) * dt);
     else nitro.current = Math.min(100, nitro.current + NITRO_REGEN * dt);
     boostRef.current = boosting;
 
     // --- throttle (weak in the air, sluggish in water) ---
     const engine = ENGINE * stats.accel;
-    const throttle = k.up ? 1 : 0;
-    const brake = k.down ? 1 : 0;
+    const throttle = Math.max(0, input.throttle);
+    const brake = Math.max(0, -input.throttle);
     let thrust = throttle * engine - brake * (fSpeed > 1 ? engine * 0.9 : REVERSE);
     if (boosting) thrust += BOOST_THRUST * stats.accel;
     if (!grounded) thrust *= 0.12;
@@ -286,7 +248,7 @@ export default function PlayerCar() {
     fSpeed = v.dot(fwd.current);
     tmp.current.copy(fwd.current).multiplyScalar(fSpeed);
     const lat = v.sub(tmp.current); // v is now lateral only
-    const grip = (!grounded ? 0.4 : k.drift ? DRIFT_GRIP : GRIP) * stats.grip;
+    const grip = (!grounded ? 0.4 : input.drift ? DRIFT_GRIP : GRIP) * stats.grip;
     lat.multiplyScalar(1 / (1 + grip * dt));
     driftRef.current = clamp(lat.length() / 12, 0, 1);
     v.add(tmp.current);
@@ -312,11 +274,11 @@ export default function PlayerCar() {
     if (fSpeed < -12) v.addScaledVector(fwd.current, -12 - fSpeed);
 
     // --- steering (reduced mid-air, unless drifting: SPACE whips spins) ---
-    const steer = (k.left ? 1 : 0) - (k.right ? 1 : 0);
+    const steer = input.steer;
     steerRef.current = steer;
     const speedFactor = clamp(Math.abs(fSpeed) / 8, 0, 1) * Math.sign(fSpeed || 1);
-    const airFactor = grounded ? 1 : k.drift ? 1.25 : 0.35;
-    yaw.current += steer * STEER_RATE * (k.drift ? 1.45 : 1) * speedFactor * airFactor * dt;
+    const airFactor = grounded ? 1 : input.drift ? 1.25 : 0.35;
+    yaw.current += steer * STEER_RATE * (input.drift ? 1.45 : 1) * speedFactor * airFactor * dt;
 
     // --- integrate planar + vertical ---
     p.x += v.x * dt;
@@ -591,6 +553,14 @@ export default function PlayerCar() {
     }
     speedRef.current = fSpeed;
 
+    // --- headlights: fade on after dusk, off by day (tied to the cycle) ---
+    if (headlights.current) {
+      sampleSky(dayTime(state.clock.elapsedTime), nightSample.current);
+      const night = 1 - nightSample.current.dayFactor;
+      headlights.current.intensity = night * 90;
+      headlights.current.visible = night > 0.03;
+    }
+
     // --- boost hiss follows the nitro state ---
     if (boosting !== prevBoost.current) {
       prevBoost.current = boosting;
@@ -669,6 +639,15 @@ export default function PlayerCar() {
         driftRef={driftRef}
         crashRef={crashRef}
         infected={infected}
+      />
+      {/* headlights: a warm forward spill that lights the road at night */}
+      <pointLight
+        ref={headlights}
+        position={[0, 1.1, 2.4]}
+        color="#fff0cf"
+        distance={30}
+        decay={2}
+        intensity={0}
       />
       {/* next-gate pointer (race mode only) */}
       <group ref={gateArrow} position={[0, 3.4, 0]} visible={false}>
